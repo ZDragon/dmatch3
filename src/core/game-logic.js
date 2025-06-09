@@ -1,4 +1,3 @@
-import { getRandom } from './deterministic';
 const MATCH_3_COUNT = 3;
 
 function detectMatches(grid) {
@@ -6,28 +5,64 @@ function detectMatches(grid) {
     const rows = grid.length;
     const cols = grid[0].length;
 
+    // Горизонтальные матчи
     for (let row = 0; row < rows; row++) {
-        for (let col = 0; col < cols; col++) {
-            const value = grid[row][col];
-            if (value !== 0) {
-                // Check horizontal match
-                if (col <= cols - MATCH_3_COUNT && value === grid[row][col + 1] && value === grid[row][col + 2]) {
-                    matches.push({ type: 'horizontal', positions: [[row, col], [row, col + 1], [row, col + 2]] });
+        for (let col = 0; col <= cols - 3; col++) {
+            if (grid[row][col] === grid[row][col + 1] && 
+                grid[row][col] === grid[row][col + 2] &&
+                grid[row][col] !== 0) {
+                
+                const match = [];
+                for (let i = col; i < cols && grid[row][i] === grid[row][col]; i++) {
+                    match.push({ x: i, y: row });
                 }
-                // Check vertical match
-                if (row <= rows - MATCH_3_COUNT && value === grid[row + 1][col] && value === grid[row + 2][col]) {
-                    matches.push({ type: 'vertical', positions: [[row, col], [row + 1, col], [row + 2, col]] });
-                }
+                matches.push(match);
+                col = col + match.length - 1; // пропускаем обработанные элементы
             }
         }
     }
+
+    // Вертикальные матчи
+    for (let col = 0; col < cols; col++) {
+        for (let row = 0; row <= rows - 3; row++) {
+            if (grid[row][col] === grid[row + 1][col] && 
+                grid[row][col] === grid[row + 2][col] &&
+                grid[row][col] !== 0) {
+                
+                const match = [];
+                for (let i = row; i < rows && grid[i][col] === grid[row][col]; i++) {
+                    match.push({ x: col, y: i });
+                }
+                matches.push(match);
+                row = row + match.length - 1; // пропускаем обработанные элементы
+            }
+        }
+    }
+
     return matches;
 }
 
 function removeMatches(grid, matches) {
+    // Добавляем проверку на валидность matches
+    if (!matches || !Array.isArray(matches)) {
+        console.warn('removeMatches: matches не является массивом', matches);
+        return;
+    }
+
     matches.forEach(match => {
-        match.positions.forEach(([row, col]) => {
-            grid[row][col] = 0; // Remove the matched element
+        // Проверяем каждый match
+        if (!match || !Array.isArray(match)) {
+            console.warn('removeMatches: match не является массивом', match);
+            return;
+        }
+
+        match.forEach(({ x, y }) => {
+            if (typeof x === 'number' && typeof y === 'number' && 
+                y >= 0 && y < grid.length && x >= 0 && x < grid[0].length) {
+                grid[y][x] = 0;
+            } else {
+                console.warn('removeMatches: невалидные координаты', { x, y });
+            }
         });
     });
 }
@@ -35,22 +70,33 @@ function removeMatches(grid, matches) {
 function applyGravity(grid) {
     const rows = grid.length;
     const cols = grid[0].length;
-
+    
     for (let col = 0; col < cols; col++) {
-        let emptySpace = rows - 1;
-        for (let row = rows - 1; row >= 0; row--) {
+        // Собираем все ненулевые элементы в колонке
+        const nonZeroElements = [];
+        for (let row = 0; row < rows; row++) {
             if (grid[row][col] !== 0) {
-                grid[emptySpace][col] = grid[row][col];
-                if (emptySpace !== row) {
-                    grid[row][col] = 0;
-                }
-                emptySpace--;
+                nonZeroElements.push(grid[row][col]);
+            }
+        }
+        
+        // Заполняем колонку: сначала нули, потом ненулевые элементы
+        for (let row = 0; row < rows; row++) {
+            if (row < rows - nonZeroElements.length) {
+                grid[row][col] = 0;
+            } else {
+                grid[row][col] = nonZeroElements[row - (rows - nonZeroElements.length)];
             }
         }
     }
 }
 
 export function spawnNewElements(grid, getRandom) {
+    if (typeof getRandom !== 'function') {
+        console.error('spawnNewElements: getRandom не является функцией');
+        return;
+    }
+
     const rows = grid.length;
     const cols = grid[0].length;
 

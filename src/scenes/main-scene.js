@@ -704,16 +704,34 @@ class MainScene extends Phaser.Scene {
         
         while (foundMatches && cascadeCount < 20) {
             const matches = detectMatches(this.grid);
+
+            // Отладочная информация
+            console.log('Результат detectMatches:', matches);
+            console.log('Тип matches:', typeof matches);
+            console.log('Является ли массивом:', Array.isArray(matches));
             
-            if (matches.length > 0) {
+            if (matches && Array.isArray(matches) && matches.length > 0) {
                 console.log(`Найдено матчей: ${matches.length}, каскад #${cascadeCount + 1}`);
                 
                 // Подсчитываем собранные камни
-                matches.forEach(match => {
-                    match.forEach(({ x, y }) => {
-                        const gemType = this.grid[y][x];
-                        totalCollected[gemType]++;
-                    });
+                matches.forEach((match, matchIndex) => {
+                    console.log(`Обрабатываем match ${matchIndex}:`, match);
+                    
+                    // Проверяем, что match является массивом
+                    if (Array.isArray(match)) {
+                        match.forEach(({ x, y }) => {
+                            if (typeof x === 'number' && typeof y === 'number' && 
+                                y >= 0 && y < this.grid.length && 
+                                x >= 0 && x < this.grid[0].length) {
+                                const gemType = this.grid[y][x];
+                                if (gemType && gemType >= 1 && gemType <= 5) {
+                                    totalCollected[gemType]++;
+                                }
+                            }
+                        });
+                    } else {
+                        console.error('Match не является массивом:', match);
+                    }
                 });
                 
                 removeMatches(this.grid, matches);

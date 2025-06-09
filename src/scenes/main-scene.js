@@ -11,7 +11,7 @@ const elementWidth = 64;
 const elementHeight = 64;
 const elementSpacing = 8;
 const gemSize = 56;
-const MAX_MOVES = 5; // максимальное количество ходов
+const MAX_MOVES = 7; // максимальное количество ходов
 
 
 class MainScene extends Phaser.Scene {

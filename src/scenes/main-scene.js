@@ -431,6 +431,7 @@ class MainScene extends Phaser.Scene {
         }
     }
 
+    // Исправляем startReplay для правильного запуска
     startReplay(actions) {
         this.isReplaying = true;
         this.replayIndex = 0;
@@ -438,12 +439,12 @@ class MainScene extends Phaser.Scene {
         
         this.updateStatus(`Начинаем реплей ${actions.length} действий...`);
         
-        // Запускаем реплей с задержкой между действиями
+        // Запускаем реплей
         this.replayNextAction();
     }
 
-    // Обновляем метод реплея для учета ходов
-    replayNextAction() {
+    // Обновляем метод реплея для учета ходов и анимаций
+    async replayNextAction() {
         if (this.replayIndex >= this.replayActions.length) {
             this.isReplaying = false;
             this.updateStatus('Реплей завершен');
@@ -459,19 +460,45 @@ class MainScene extends Phaser.Scene {
         if (action.type === 'swap') {
             this.highlightReplayAction(action);
             
-            // Выполняем обмен
-            setTimeout(() => {
-                // В реплее не уменьшаем ходы, просто выполняем действие
-                this.swapElements(action.from, action.to, false);
-                this.replayIndex++;
-                
-                // Продолжаем через 1 секунду
-                setTimeout(() => this.replayNextAction(), 1000);
-            }, 500);
+            // Ждем 500мс для показа подсветки
+            await this.delay(500);
+            
+            // Выполняем обмен и ЖДЕМ завершения всех анимаций
+            await this.swapElementsForReplay(action.from, action.to);
+            
+            this.replayIndex++;
+            
+            // Небольшая пауза перед следующим действием
+            await this.delay(1000);
+            
+            // Продолжаем реплей
+            this.replayNextAction();
         } else {
             this.replayIndex++;
             setTimeout(() => this.replayNextAction(), 100);
         }
+    }
+
+    // Специальная версия swapElements для реплея без изменения ходов
+    async swapElementsForReplay(from, to) {
+        console.log(`Реплей обмен: (${from.x},${from.y}) <-> (${to.x},${to.y}), Random calls before: ${this.randomCallCounter}`);
+        
+        this.isAnimating = true;
+        
+        // Анимация обмена элементов
+        await this.animateSwap(from, to);
+        
+        // Выполняем логический обмен
+        const temp = this.grid[from.y][from.x];
+        this.grid[from.y][from.x] = this.grid[to.y][to.x];
+        this.grid[to.y][to.x] = temp;
+
+        // Обрабатываем матчи с анимацией
+        await this.processMatchesAnimated();
+        
+        this.isAnimating = false;
+        
+        console.log(`Реплей обмен завершен, Random calls after: ${this.randomCallCounter}`);
     }
 
     highlightReplayAction(action) {
@@ -611,8 +638,8 @@ class MainScene extends Phaser.Scene {
         this.grid = this.createInitialGridDeterministic();
     }
 
-    // Обновляем обработчик ввода для блокировки во время анимации
-    handleInput(pointer) {
+    // Обновляем handleInput для использования async/await
+    async handleInput(pointer) {
         console.log('handleInput вызван, gameOver:', this.gameOver, 'isReplaying:', this.isReplaying, 'isAnimating:', this.isAnimating);
         
         if (this.isReplaying || this.gameOver || this.isAnimating) {
@@ -643,7 +670,8 @@ class MainScene extends Phaser.Scene {
                         to: { x, y }
                     };
                     
-                    this.makeMove(this.selectedElement, { x, y });
+                    // Ожидаем завершения хода перед логированием
+                    await this.makeMove(this.selectedElement, { x, y });
                     this.logAction(swapAction);
                 } else {
                     this.updateStatus('Недопустимый ход - не создает матчей!');
@@ -675,16 +703,17 @@ class MainScene extends Phaser.Scene {
         return matches.length > 0;
     }
 
-    makeMove(from, to) {
+    // Обновляем makeMove для использования async/await
+    async makeMove(from, to) {
         // Уменьшаем количество ходов
         this.movesLeft--;
         this.updateMovesDisplay();
         
-        // Выполняем обмен
-        this.swapElements(from, to, true);
+        // Выполняем обмен и ждем завершения
+        await this.swapElements(from, to, true);
         
         // Проверяем, закончились ли ходы
-        if (this.movesLeft <= 0) {
+        if (this.movesLeft <= 0 && !this.gameOver) {
             this.triggerGameOver();
         }
     }
@@ -696,6 +725,7 @@ class MainScene extends Phaser.Scene {
     }
 
     showGameOverWindow() {
+        this.clearSelection();
         // Массив для хранения всех элементов окна
         this.gameOverElements = [];
         
@@ -813,7 +843,7 @@ class MainScene extends Phaser.Scene {
         }
     }
 
-    // Обновляем swapElements для использования анимации
+    // Обновляем обычный swapElements для игрока
     async swapElements(from, to, shouldLog = true) {
         console.log(`Обмен: (${from.x},${from.y}) <-> (${to.x},${to.y}), Random calls before: ${this.randomCallCounter}`);
         
@@ -943,11 +973,13 @@ class MainScene extends Phaser.Scene {
         console.log(`Заспавнено ${spawnCount} гемов в каскаде ${cascadeNumber}`);
     }
 
-    // Детерминированная обработка матчей с анимацией
+    // Добавляем проверку состояния анимации в processMatchesAnimated
     async processMatchesAnimated() {
         let foundMatches = true;
         let cascadeCount = 0;
         let totalCollected = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+        
+        console.log(`Начинаем обработку матчей. Random calls: ${this.randomCallCounter}`);
         
         while (foundMatches && cascadeCount < 20) {
             const matches = this.detectMatchesDeterministic(this.grid);
@@ -955,7 +987,7 @@ class MainScene extends Phaser.Scene {
             if (matches && matches.length > 0) {
                 console.log(`Каскад #${cascadeCount + 1}: найдено ${matches.length} матчей`);
                 
-                // Анимируем найденные матчи
+                // Анимируем найденные матчи и ЖДЕМ завершения
                 await this.animateMatches(matches);
                 
                 // Подсчитываем собранные камни
@@ -975,7 +1007,7 @@ class MainScene extends Phaser.Scene {
                 // Удаляем матчи
                 removeMatches(this.grid, matches);
                 
-                // Анимируем падение элементов
+                // Анимируем падение элементов и ЖДЕМ завершения
                 await this.animateGravity();
                 
                 // Применяем гравитацию
@@ -984,13 +1016,13 @@ class MainScene extends Phaser.Scene {
                 // Заполняем новыми элементами
                 this.customSpawnNewElements(this.grid, cascadeCount);
                 
-                // Анимируем появление новых элементов
+                // Анимируем появление новых элементов и ЖДЕМ завершения
                 await this.animateNewElements();
                 
                 cascadeCount++;
                 
                 // Небольшая пауза между каскадами
-                await this.delay(300);
+                await this.delay(200);
             } else {
                 foundMatches = false;
             }
@@ -1009,7 +1041,7 @@ class MainScene extends Phaser.Scene {
         console.log(`Обработано каскадов: ${cascadeCount}, Random calls: ${this.randomCallCounter}`);
     }
 
-    // Анимация найденных матчей
+    // Улучшенная анимация матчей с гарантированным завершением
     async animateMatches(matches) {
         const matchSprites = [];
         
@@ -1024,7 +1056,12 @@ class MainScene extends Phaser.Scene {
             }
         });
         
+        if (matchSprites.length === 0) return;
+        
         return new Promise(resolve => {
+            let completedAnimations = 0;
+            const totalAnimations = matchSprites.length;
+            
             // Первая фаза: подсветка матчей
             matchSprites.forEach(sprite => {
                 sprite.setTint(0xffffff); // белая подсветка
@@ -1065,8 +1102,11 @@ class MainScene extends Phaser.Scene {
                         ease: 'Back.easeIn',
                         onComplete: () => {
                             sprite.setVisible(false);
-                            if (index === matchSprites.length - 1) {
-                                resolve(); // завершаем когда последний элемент исчез
+                            completedAnimations++;
+                            
+                            // Когда все анимации завершены
+                            if (completedAnimations === totalAnimations) {
+                                resolve();
                             }
                         }
                     });
@@ -1108,7 +1148,7 @@ class MainScene extends Phaser.Scene {
         }
     }
 
-    // Анимация падения элементов
+    // Улучшенная анимация гравитации с правильным ожиданием
     async animateGravity() {
         const animationPromises = [];
         
@@ -1148,10 +1188,12 @@ class MainScene extends Phaser.Scene {
         }
         
         // Ждем завершения всех анимаций падения
-        await Promise.all(animationPromises);
+        if (animationPromises.length > 0) {
+            await Promise.all(animationPromises);
+        }
     }
 
-    // Анимация появления новых элементов
+    // Улучшенная анимация новых элементов с правильным ожиданием
     async animateNewElements() {
         const newSprites = [];
         
@@ -1180,16 +1222,24 @@ class MainScene extends Phaser.Scene {
             }
         }
         
+        if (newSprites.length === 0) return;
+        
         // Анимируем появление новых элементов
         const animationPromises = newSprites.map(({ sprite, targetY }, index) => {
             return new Promise(resolve => {
+                let completedTweens = 0;
+                
                 // Сначала элемент падает сверху
                 this.tweens.add({
                     targets: sprite,
                     y: targetY,
                     duration: 300,
                     delay: index * 30, // небольшая задержка между элементами
-                    ease: 'Bounce.easeOut'
+                    ease: 'Bounce.easeOut',
+                    onComplete: () => {
+                        completedTweens++;
+                        if (completedTweens === 2) resolve();
+                    }
                 });
                 
                 // Одновременно появляется и увеличивается
@@ -1201,7 +1251,10 @@ class MainScene extends Phaser.Scene {
                     duration: 200,
                     delay: index * 30,
                     ease: 'Back.easeOut',
-                    onComplete: resolve
+                    onComplete: () => {
+                        completedTweens++;
+                        if (completedTweens === 2) resolve();
+                    }
                 });
             });
         });
@@ -1299,6 +1352,7 @@ class MainScene extends Phaser.Scene {
     }
 
     showWinWindow() {
+        this.clearSelection();
         // Массив для хранения всех элементов окна
         this.winElements = [];
         

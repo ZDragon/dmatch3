@@ -23,8 +23,12 @@ class MainScene extends Phaser.Scene {
         this.currentSeed = 12345;
         this.isReplaying = false;
         this.replayIndex = 0;
-        this.movesLeft = MAX_MOVES; // добавляем счетчик ходов
-        this.gameOver = false; // флаг окончания игры
+        this.movesLeft = MAX_MOVES;
+        this.gameOver = false;
+        
+        // Система заданий
+        this.objective = null;
+        this.collectedGems = {};
     }
     
     preload() {
@@ -72,35 +76,50 @@ class MainScene extends Phaser.Scene {
             fontWeight: 'bold'
         });
         
+        // Задание
+        this.objectiveText = this.add.text(uiX, uiY + 80, '', { 
+            fontSize: '12px', 
+            fill: '#000',
+            fontWeight: 'bold',
+            wordWrap: { width: 140 }
+        });
+        
+        // Прогресс по заданию
+        this.progressText = this.add.text(uiX, uiY + 120, '', { 
+            fontSize: '11px', 
+            fill: '#333',
+            wordWrap: { width: 140 }
+        });
+        
         // Кнопка "Новая игра"
-        this.createButton(uiX, uiY + 80, 100, 25, 'Новая игра', () => {
+        this.createButton(uiX, uiY + 160, 100, 25, 'Новая игра', () => {
             this.currentSeed = parseInt(this.seedInput.value) || 12345;
             this.startNewGame();
         });
         
         // Кнопка "Экспорт лога"
-        this.createButton(uiX, uiY + 115, 100, 25, 'Экспорт лога', () => {
+        this.createButton(uiX, uiY + 195, 100, 25, 'Экспорт лога', () => {
             this.exportActionLog();
         });
         
         // Поле загрузки лога
-        this.add.text(uiX, uiY + 150, 'Импорт лога:', { fontSize: '12px', fill: '#000' });
-        this.logInput = this.createInputField(uiX, uiY + 170, 140, 40, 'Вставьте лог...');
+        this.add.text(uiX, uiY + 230, 'Импорт лога:', { fontSize: '12px', fill: '#000' });
+        this.logInput = this.createInputField(uiX, uiY + 250, 140, 40, 'Вставьте лог...');
         
         // Кнопка "Импорт и реплей"
-        this.createButton(uiX, uiY + 220, 100, 25, 'Реплей', () => {
+        this.createButton(uiX, uiY + 300, 100, 25, 'Реплей', () => {
             this.importAndReplay();
         });
         
         // Текст статуса
-        this.statusText = this.add.text(uiX, uiY + 255, '', { 
+        this.statusText = this.add.text(uiX, uiY + 335, '', { 
             fontSize: '11px', 
             fill: '#666',
             wordWrap: { width: 140 }
         });
         
         // Лог действий
-        this.logText = this.add.text(uiX, uiY + 305, 'Лог действий:', { 
+        this.logText = this.add.text(uiX, uiY + 385, 'Лог действий:', { 
             fontSize: '10px', 
             fill: '#333',
             wordWrap: { width: 140 }
@@ -160,21 +179,74 @@ class MainScene extends Phaser.Scene {
         this.selectedElement = null;
         this.isReplaying = false;
         this.replayIndex = 0;
-        this.movesLeft = MAX_MOVES; // сбрасываем счетчик ходов
-        this.gameOver = false; // сбрасываем флаг игры
+        this.movesLeft = MAX_MOVES;
+        this.gameOver = false;
+        this.collectedGems = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
         
+        // СНАЧАЛА устанавливаем сид
         setSeed(this.currentSeed);
+        
+        // ПОТОМ генерируем задание (которое использует getRandom)
+        this.generateObjective();
+        
         this.initializeGrid();
         this.processMatches();
         this.renderGrid();
         this.input.on('pointerdown', this.handleInput, this);
         
         this.updateMovesDisplay();
+        this.updateObjectiveDisplay();
+        this.updateProgressDisplay();
         this.updateStatus(`Новая игра начата с сидом: ${this.currentSeed}`);
         this.updateActionLog();
         
-        // Скрываем окно проигрыша, если оно было показано
+        // Скрываем окна победы/поражения
         this.hideGameOverWindow();
+        this.hideWinWindow();
+    }
+
+    generateObjective() {
+        // Список цветов камней
+        const gemNames = ['красных', 'синих', 'зеленых', 'желтых', 'фиолетовых'];
+        
+        // Случайно выбираем цвет и количество
+        const targetGemType = getRandom(1, ELEMENT_TYPES);
+        const targetAmount = getRandom(15, 25); // от 15 до 25 камней
+        
+        this.objective = {
+            gemType: targetGemType,
+            amount: targetAmount,
+            description: `Собрать ${targetAmount} ${gemNames[targetGemType - 1]} камней`
+        };
+        
+        console.log('Сгенерировано задание:', this.objective);
+    }
+
+    updateObjectiveDisplay() {
+        if (this.objective && this.objectiveText) {
+            this.objectiveText.setText(`Задание:\n${this.objective.description}`);
+        }
+    }
+
+    updateProgressDisplay() {
+        if (this.objective && this.progressText) {
+            const current = this.collectedGems[this.objective.gemType] || 0;
+            const target = this.objective.amount;
+            const percentage = Math.floor((current / target) * 100);
+            
+            this.progressText.setText(`Прогресс: ${current}/${target} (${percentage}%)`);
+            
+            // Меняем цвет в зависимости от прогресса
+            if (percentage >= 100) {
+                this.progressText.setStyle({ fill: '#00ff00', fontWeight: 'bold' }); // зеленый
+            } else if (percentage >= 75) {
+                this.progressText.setStyle({ fill: '#88ff00', fontWeight: 'bold' }); // светло-зеленый
+            } else if (percentage >= 50) {
+                this.progressText.setStyle({ fill: '#ffff00', fontWeight: 'bold' }); // желтый
+            } else {
+                this.progressText.setStyle({ fill: '#333333', fontWeight: 'normal' }); // серый
+            }
+        }
     }
 
     updateMovesDisplay() {
@@ -192,7 +264,7 @@ class MainScene extends Phaser.Scene {
         }
     }
 
-    // Обновляем метод логирования для учета ходов
+    // Обновляем метод логирования для включения прогресса по заданию
     logAction(action) {
         const timestamp = Date.now();
         const logEntry = {
@@ -200,7 +272,9 @@ class MainScene extends Phaser.Scene {
             action: action.type,
             data: action,
             seed: this.currentSeed,
-            movesLeft: this.movesLeft // добавляем информацию о ходах
+            movesLeft: this.movesLeft,
+            objective: this.objective,
+            progress: this.collectedGems[this.objective.gemType] || 0
         };
         
         this.actionLog.push(logEntry);
@@ -481,16 +555,16 @@ class MainScene extends Phaser.Scene {
             this.cameras.main.centerX,
             this.cameras.main.centerY,
             400,
-            200,
+            250,
             0xffffff
-        ).setStrokeStyle(3, 0x000000).setDepth(101);
+        ).setStrokeStyle(3, 0xff0000).setDepth(101);
         this.gameOverElements.push(this.gameOverWindow);
 
         // Заголовок
         const titleText = this.add.text(
             this.cameras.main.centerX,
-            this.cameras.main.centerY - 60,
-            'ИГРА ОКОНЧЕНА',
+            this.cameras.main.centerY - 80,
+            'ПОРАЖЕНИЕ',
             {
                 fontSize: '24px',
                 fill: '#ff0000',
@@ -500,10 +574,11 @@ class MainScene extends Phaser.Scene {
         this.gameOverElements.push(titleText);
 
         // Текст с результатом
+        const current = this.collectedGems[this.objective.gemType] || 0;
         const resultText = this.add.text(
             this.cameras.main.centerX,
             this.cameras.main.centerY - 20,
-            `Ходы закончились!\nСыграно ходов: ${MAX_MOVES - this.movesLeft}`,
+            `Ходы закончились!\n${this.objective.description}\nСобрано: ${current}/${this.objective.amount}\nНе хватило: ${this.objective.amount - current}`,
             {
                 fontSize: '16px',
                 fill: '#000000',
@@ -515,7 +590,7 @@ class MainScene extends Phaser.Scene {
         // Кнопка "Новая игра"
         const newGameButton = this.add.rectangle(
             this.cameras.main.centerX,
-            this.cameras.main.centerY + 40,
+            this.cameras.main.centerY + 60,
             150,
             40,
             0x4CAF50
@@ -535,7 +610,7 @@ class MainScene extends Phaser.Scene {
 
         const buttonText = this.add.text(
             this.cameras.main.centerX,
-            this.cameras.main.centerY + 40,
+            this.cameras.main.centerY + 60,
             'Новая игра',
             {
                 fontSize: '16px',
@@ -625,36 +700,162 @@ class MainScene extends Phaser.Scene {
     processMatches() {
         let foundMatches = true;
         let cascadeCount = 0;
+        let totalCollected = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
         
-        // Продолжаем поиск матчей пока они есть
-        while (foundMatches && cascadeCount < 20) { // лимит для предотвращения бесконечного цикла
+        while (foundMatches && cascadeCount < 20) {
             const matches = detectMatches(this.grid);
             
             if (matches.length > 0) {
                 console.log(`Найдено матчей: ${matches.length}, каскад #${cascadeCount + 1}`);
                 
-                // Удаляем найденные матчи
+                // Подсчитываем собранные камни
+                matches.forEach(match => {
+                    match.forEach(({ x, y }) => {
+                        const gemType = this.grid[y][x];
+                        totalCollected[gemType]++;
+                    });
+                });
+                
                 removeMatches(this.grid, matches);
-                
-                // Применяем гравитацию
                 applyGravity(this.grid);
-                
-                // Заполняем пустые места новыми элементами
                 spawnNewElements(this.grid, getRandom);
                 
                 cascadeCount++;
-                
-                // Небольшая задержка для визуального эффекта (опционально)
-                // await this.delay(300);
             } else {
                 foundMatches = false;
             }
         }
         
+        // Обновляем счетчики собранных камней
+        Object.keys(totalCollected).forEach(gemType => {
+            if (totalCollected[gemType] > 0) {
+                this.collectedGems[gemType] = (this.collectedGems[gemType] || 0) + totalCollected[gemType];
+                console.log(`Собрано камней типа ${gemType}: +${totalCollected[gemType]} (всего: ${this.collectedGems[gemType]})`);
+            }
+        });
+        
+        // Обновляем отображение прогресса
+        this.updateProgressDisplay();
+        
+        // Проверяем победу
+        this.checkWinCondition();
+        
         if (cascadeCount > 0) {
             console.log(`Обработано каскадов: ${cascadeCount}`);
-            // Можно добавить бонусные очки за каскады
-            // this.addCascadeBonus(cascadeCount);
+        }
+    }
+
+    checkWinCondition() {
+        if (this.objective && !this.gameOver) {
+            const current = this.collectedGems[this.objective.gemType] || 0;
+            if (current >= this.objective.amount) {
+                this.triggerWin();
+            }
+        }
+    }
+
+    triggerWin() {
+        this.gameOver = true;
+        this.showWinWindow();
+        this.updateStatus('Поздравляем! Задание выполнено!');
+    }
+
+    showWinWindow() {
+        // Массив для хранения всех элементов окна
+        this.winElements = [];
+        
+        // Создаем полупрозрачный фон
+        const winOverlay = this.add.rectangle(
+            this.cameras.main.centerX,
+            this.cameras.main.centerY,
+            this.cameras.main.width,
+            this.cameras.main.height,
+            0x000000,
+            0.7
+        ).setDepth(100);
+        this.winElements.push(winOverlay);
+
+        // Создаем окно победы
+        const winWindow = this.add.rectangle(
+            this.cameras.main.centerX,
+            this.cameras.main.centerY,
+            400,
+            250,
+            0xffffff
+        ).setStrokeStyle(3, 0x00aa00).setDepth(101);
+        this.winElements.push(winWindow);
+
+        // Заголовок
+        const titleText = this.add.text(
+            this.cameras.main.centerX,
+            this.cameras.main.centerY - 80,
+            'ПОБЕДА!',
+            {
+                fontSize: '32px',
+                fill: '#00aa00',
+                fontWeight: 'bold'
+            }
+        ).setOrigin(0.5).setDepth(102);
+        this.winElements.push(titleText);
+
+        // Текст с результатом
+        const current = this.collectedGems[this.objective.gemType] || 0;
+        const usedMoves = MAX_MOVES - this.movesLeft;
+        const resultText = this.add.text(
+            this.cameras.main.centerX,
+            this.cameras.main.centerY - 30,
+            `Задание выполнено!\n${this.objective.description}\nСобрано: ${current}\nИспользовано ходов: ${usedMoves}`,
+            {
+                fontSize: '16px',
+                fill: '#000000',
+                align: 'center'
+            }
+        ).setOrigin(0.5).setDepth(102);
+        this.winElements.push(resultText);
+
+        // Кнопка "Новая игра"
+        const newGameButton = this.add.rectangle(
+            this.cameras.main.centerX,
+            this.cameras.main.centerY + 60,
+            150,
+            40,
+            0x4CAF50
+        ).setStrokeStyle(2, 0x2E7D32)
+        .setInteractive()
+        .setDepth(102)
+        .on('pointerdown', () => {
+            this.startNewGame();
+        })
+        .on('pointerover', () => {
+            newGameButton.setFillStyle(0x66BB6A);
+        })
+        .on('pointerout', () => {
+            newGameButton.setFillStyle(0x4CAF50);
+        });
+        this.winElements.push(newGameButton);
+
+        const buttonText = this.add.text(
+            this.cameras.main.centerX,
+            this.cameras.main.centerY + 60,
+            'Новая игра',
+            {
+                fontSize: '16px',
+                fill: '#ffffff',
+                fontWeight: 'bold'
+            }
+        ).setOrigin(0.5).setDepth(103);
+        this.winElements.push(buttonText);
+    }
+
+    hideWinWindow() {
+        // Удаляем все элементы окна победы
+        if (this.winElements) {
+            this.winElements.forEach(element => {
+                if (element && element.destroy) {
+                    element.destroy(true);
+                }
+            });
+            this.winElements = [];
         }
     }
 

@@ -38,6 +38,8 @@ class MainScene extends Phaser.Scene {
 
         // Добавляем счетчик вызовов генератора для отладки
         this.randomCallCounter = 0;
+        // Добавляем флаг для блокировки ввода во время анимации
+        this.isAnimating = false;
     }
 
     // Обертка над getRandom для отслеживания вызовов
@@ -609,11 +611,11 @@ class MainScene extends Phaser.Scene {
         this.grid = this.createInitialGridDeterministic();
     }
 
-    // Обновите обработчик ввода для отладки
+    // Обновляем обработчик ввода для блокировки во время анимации
     handleInput(pointer) {
-        console.log('handleInput вызван, gameOver:', this.gameOver, 'isReplaying:', this.isReplaying);
+        console.log('handleInput вызван, gameOver:', this.gameOver, 'isReplaying:', this.isReplaying, 'isAnimating:', this.isAnimating);
         
-        if (this.isReplaying || this.gameOver) {
+        if (this.isReplaying || this.gameOver || this.isAnimating) {
             console.log('Ввод заблокирован');
             return;
         }
@@ -811,18 +813,65 @@ class MainScene extends Phaser.Scene {
         }
     }
 
-    // Обновляем swapElements для детерминированности
-    swapElements(from, to, shouldLog = true) {
+    // Обновляем swapElements для использования анимации
+    async swapElements(from, to, shouldLog = true) {
         console.log(`Обмен: (${from.x},${from.y}) <-> (${to.x},${to.y}), Random calls before: ${this.randomCallCounter}`);
         
+        this.isAnimating = true;
+        
+        // Анимация обмена элементов
+        await this.animateSwap(from, to);
+        
+        // Выполняем логический обмен
         const temp = this.grid[from.y][from.x];
         this.grid[from.y][from.x] = this.grid[to.y][to.x];
         this.grid[to.y][to.x] = temp;
 
-        this.processMatches();
-        this.renderGrid();
+        // Обрабатываем матчи с анимацией
+        await this.processMatchesAnimated();
+        
+        this.isAnimating = false;
         
         console.log(`Обмен завершен, Random calls after: ${this.randomCallCounter}`);
+    }
+
+    // Анимация обмена двух элементов
+    async animateSwap(from, to) {
+        const sprite1 = this.sprites[from.y][from.x];
+        const sprite2 = this.sprites[to.y][to.x];
+        
+        if (!sprite1 || !sprite2) return;
+        
+        // Получаем текущие и целевые позиции
+        const sprite1StartX = sprite1.x;
+        const sprite1StartY = sprite1.y;
+        const sprite2StartX = sprite2.x;
+        const sprite2StartY = sprite2.y;
+        
+        return new Promise(resolve => {
+            // Создаем анимации обмена
+            this.tweens.add({
+                targets: sprite1,
+                x: sprite2StartX,
+                y: sprite2StartY,
+                duration: 200,
+                ease: 'Power2'
+            });
+            
+            this.tweens.add({
+                targets: sprite2,
+                x: sprite1StartX,
+                y: sprite1StartY,
+                duration: 200,
+                ease: 'Power2',
+                onComplete: () => {
+                    // Обновляем позиции в массиве спрайтов
+                    this.sprites[from.y][from.x] = sprite2;
+                    this.sprites[to.y][to.x] = sprite1;
+                    resolve();
+                }
+            });
+        });
     }
     
     highlightElement(x, y) {
@@ -894,7 +943,273 @@ class MainScene extends Phaser.Scene {
         console.log(`Заспавнено ${spawnCount} гемов в каскаде ${cascadeNumber}`);
     }
 
-    // Детерминированная обработка матчей
+    // Детерминированная обработка матчей с анимацией
+    async processMatchesAnimated() {
+        let foundMatches = true;
+        let cascadeCount = 0;
+        let totalCollected = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+        
+        while (foundMatches && cascadeCount < 20) {
+            const matches = this.detectMatchesDeterministic(this.grid);
+            
+            if (matches && matches.length > 0) {
+                console.log(`Каскад #${cascadeCount + 1}: найдено ${matches.length} матчей`);
+                
+                // Анимируем найденные матчи
+                await this.animateMatches(matches);
+                
+                // Подсчитываем собранные камни
+                matches.forEach((match, matchIndex) => {
+                    if (Array.isArray(match)) {
+                        match.forEach(({ x, y }) => {
+                            if (y >= 0 && y < this.grid.length && x >= 0 && x < this.grid[0].length) {
+                                const gemType = this.grid[y][x];
+                                if (gemType >= 1 && gemType <= 5) {
+                                    totalCollected[gemType]++;
+                                }
+                            }
+                        });
+                    }
+                });
+                
+                // Удаляем матчи
+                removeMatches(this.grid, matches);
+                
+                // Анимируем падение элементов
+                await this.animateGravity();
+                
+                // Применяем гравитацию
+                applyGravity(this.grid);
+                
+                // Заполняем новыми элементами
+                this.customSpawnNewElements(this.grid, cascadeCount);
+                
+                // Анимируем появление новых элементов
+                await this.animateNewElements();
+                
+                cascadeCount++;
+                
+                // Небольшая пауза между каскадами
+                await this.delay(300);
+            } else {
+                foundMatches = false;
+            }
+        }
+        
+        // Обновляем счетчики
+        Object.keys(totalCollected).forEach(gemType => {
+            if (totalCollected[gemType] > 0) {
+                this.collectedGems[gemType] = (this.collectedGems[gemType] || 0) + totalCollected[gemType];
+            }
+        });
+        
+        this.updateProgressDisplay();
+        this.checkWinCondition();
+        
+        console.log(`Обработано каскадов: ${cascadeCount}, Random calls: ${this.randomCallCounter}`);
+    }
+
+    // Анимация найденных матчей
+    async animateMatches(matches) {
+        const matchSprites = [];
+        
+        // Собираем все спрайты матчей
+        matches.forEach(match => {
+            if (Array.isArray(match)) {
+                match.forEach(({ x, y }) => {
+                    if (this.sprites[y] && this.sprites[y][x]) {
+                        matchSprites.push(this.sprites[y][x]);
+                    }
+                });
+            }
+        });
+        
+        return new Promise(resolve => {
+            // Первая фаза: подсветка матчей
+            matchSprites.forEach(sprite => {
+                sprite.setTint(0xffffff); // белая подсветка
+                
+                // Пульсирующая анимация
+                this.tweens.add({
+                    targets: sprite,
+                    scaleX: 1.3,
+                    scaleY: 1.3,
+                    duration: 150,
+                    yoyo: true,
+                    repeat: 2,
+                    ease: 'Power2'
+                });
+                
+                // Эффект свечения
+                this.tweens.add({
+                    targets: sprite,
+                    alpha: 0.7,
+                    duration: 100,
+                    yoyo: true,
+                    repeat: 4,
+                    ease: 'Power2'
+                });
+            });
+            
+            // Вторая фаза: исчезновение
+            setTimeout(() => {
+                matchSprites.forEach((sprite, index) => {
+                    this.tweens.add({
+                        targets: sprite,
+                        scaleX: 0,
+                        scaleY: 0,
+                        alpha: 0,
+                        angle: 360,
+                        duration: 300,
+                        delay: index * 50, // небольшая задержка между элементами
+                        ease: 'Back.easeIn',
+                        onComplete: () => {
+                            sprite.setVisible(false);
+                            if (index === matchSprites.length - 1) {
+                                resolve(); // завершаем когда последний элемент исчез
+                            }
+                        }
+                    });
+                    
+                    // Добавляем эффект частиц (звездочки)
+                    this.createMatchParticles(sprite.x, sprite.y);
+                });
+            }, 600); // ждем завершения пульсации
+        });
+    }
+
+    // Создание эффекта частиц при исчезновении матча
+    createMatchParticles(x, y) {
+        const particleCount = 8;
+        const colors = [0xffff00, 0xff8800, 0xff0088, 0x88ff00, 0x0088ff];
+        
+        for (let i = 0; i < particleCount; i++) {
+            const particle = this.add.circle(x, y, 3, colors[Math.floor(Math.random() * colors.length)]);
+            particle.setDepth(50);
+            
+            const angle = (i / particleCount) * Math.PI * 2;
+            const distance = 30 + Math.random() * 20;
+            const targetX = x + Math.cos(angle) * distance;
+            const targetY = y + Math.sin(angle) * distance;
+            
+            this.tweens.add({
+                targets: particle,
+                x: targetX,
+                y: targetY,
+                alpha: 0,
+                scaleX: 0.1,
+                scaleY: 0.1,
+                duration: 400,
+                ease: 'Power2',
+                onComplete: () => {
+                    particle.destroy();
+                }
+            });
+        }
+    }
+
+    // Анимация падения элементов
+    async animateGravity() {
+        const animationPromises = [];
+        
+        for (let col = 0; col < GRID_WIDTH; col++) {
+            // Считаем сколько пустых мест в каждой колонке
+            let emptySpaces = 0;
+            
+            for (let row = GRID_HEIGHT - 1; row >= 0; row--) {
+                if (this.grid[row][col] === 0) {
+                    emptySpaces++;
+                } else if (emptySpaces > 0) {
+                    // Элемент должен упасть
+                    const sprite = this.sprites[row][col];
+                    if (sprite && sprite.visible) {
+                        const newRow = row + emptySpaces;
+                        const newY = newRow * (elementHeight + elementSpacing) + elementHeight / 2;
+                        
+                        // Создаем анимацию падения
+                        const promise = new Promise(resolve => {
+                            this.tweens.add({
+                                targets: sprite,
+                                y: newY,
+                                duration: 200 + emptySpaces * 50, // больше расстояние = дольше падение
+                                ease: 'Bounce.easeOut',
+                                onComplete: resolve
+                            });
+                        });
+                        
+                        animationPromises.push(promise);
+                        
+                        // Обновляем позицию в массиве спрайтов
+                        this.sprites[newRow][col] = sprite;
+                        this.sprites[row][col] = null;
+                    }
+                }
+            }
+        }
+        
+        // Ждем завершения всех анимаций падения
+        await Promise.all(animationPromises);
+    }
+
+    // Анимация появления новых элементов
+    async animateNewElements() {
+        const newSprites = [];
+        
+        // Находим новые элементы и создаем для них спрайты
+        for (let row = 0; row < GRID_HEIGHT; row++) {
+            for (let col = 0; col < GRID_WIDTH; col++) {
+                if (!this.sprites[row][col] || !this.sprites[row][col].visible) {
+                    const gemType = this.grid[row][col];
+                    if (gemType > 0) {
+                        // Создаем новый спрайт
+                        const sprite = this.add.image(
+                            col * (elementWidth + elementSpacing) + elementWidth / 2,
+                            -elementHeight, // начинаем выше экрана
+                            `gem${gemType}`
+                        );
+                        sprite.setDisplaySize(gemSize, gemSize);
+                        sprite.setInteractive({ useHandCursor: true });
+                        sprite.setDepth(1);
+                        sprite.setScale(0); // начинаем с нулевого размера
+                        sprite.setAlpha(0); // и прозрачности
+                        
+                        this.sprites[row][col] = sprite;
+                        newSprites.push({ sprite, targetY: row * (elementHeight + elementSpacing) + elementHeight / 2 });
+                    }
+                }
+            }
+        }
+        
+        // Анимируем появление новых элементов
+        const animationPromises = newSprites.map(({ sprite, targetY }, index) => {
+            return new Promise(resolve => {
+                // Сначала элемент падает сверху
+                this.tweens.add({
+                    targets: sprite,
+                    y: targetY,
+                    duration: 300,
+                    delay: index * 30, // небольшая задержка между элементами
+                    ease: 'Bounce.easeOut'
+                });
+                
+                // Одновременно появляется и увеличивается
+                this.tweens.add({
+                    targets: sprite,
+                    scaleX: 1,
+                    scaleY: 1,
+                    alpha: 1,
+                    duration: 200,
+                    delay: index * 30,
+                    ease: 'Back.easeOut',
+                    onComplete: resolve
+                });
+            });
+        });
+        
+        await Promise.all(animationPromises);
+    }
+
+    // Синхронная версия processMatches для неанимированных случаев
     processMatches() {
         let foundMatches = true;
         let cascadeCount = 0;

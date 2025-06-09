@@ -29,6 +29,12 @@ class MainScene extends Phaser.Scene {
         // Система заданий
         this.objective = null;
         this.collectedGems = {};
+        
+        // Модификатор частоты появления гемов
+        this.gemModifier = {
+            targetGemType: 1, // какой тип гема усиливать (1-5)
+            multiplier: 1.0   // множитель частоты (1.0 = нормально, 2.0 = в 2 раза чаще)
+        };
     }
     
     preload() {
@@ -69,6 +75,17 @@ class MainScene extends Phaser.Scene {
         this.add.text(uiX, uiY, 'Seed:', { fontSize: '14px', fill: '#000' });
         this.seedInput = this.createInputField(uiX, uiY + 20, 80, 20, this.currentSeed.toString());
         
+        // Модификатор гемов
+        this.add.text(uiX, uiY - 30, 'Gem Modifier:', { fontSize: '14px', fill: '#000' });
+        
+        // Поле выбора типа гема
+        this.add.text(uiX, uiY - 10, 'Тип (1-5):', { fontSize: '12px', fill: '#000' });
+        this.gemTypeInput = this.createInputField(uiX + 65, uiY - 15, 30, 20, this.gemModifier.targetGemType.toString());
+        
+        // Поле множителя
+        this.add.text(uiX + 105, uiY - 10, 'x:', { fontSize: '12px', fill: '#000' });
+        this.gemMultiplierInput = this.createInputField(uiX + 120, uiY - 15, 40, 20, this.gemModifier.multiplier.toString());
+
         // Счетчик ходов
         this.movesText = this.add.text(uiX, uiY + 50, `Ходы: ${this.movesLeft}`, { 
             fontSize: '16px', 
@@ -94,6 +111,7 @@ class MainScene extends Phaser.Scene {
         // Кнопка "Новая игра"
         this.createButton(uiX, uiY + 160, 100, 25, 'Новая игра', () => {
             this.currentSeed = parseInt(this.seedInput.value) || 12345;
+            this.updateGemModifier();
             this.startNewGame();
         });
         
@@ -124,6 +142,29 @@ class MainScene extends Phaser.Scene {
             fill: '#333',
             wordWrap: { width: 140 }
         });
+    }
+
+    updateGemModifier() {
+        // Читаем значения из полей ввода
+        const targetType = parseInt(this.gemTypeInput.value);
+        const multiplier = parseFloat(this.gemMultiplierInput.value);
+        
+        // Валидация
+        if (targetType >= 1 && targetType <= ELEMENT_TYPES) {
+            this.gemModifier.targetGemType = targetType;
+        } else {
+            this.gemModifier.targetGemType = 1;
+            this.gemTypeInput.value = '1';
+        }
+        
+        if (multiplier >= 0.1 && multiplier <= 10.0) {
+            this.gemModifier.multiplier = multiplier;
+        } else {
+            this.gemModifier.multiplier = 1.0;
+            this.gemMultiplierInput.value = '1.0';
+        }
+        
+        console.log('Gem Modifier обновлен:', this.gemModifier);
     }
 
     createInputField(x, y, width, height, placeholder) {
@@ -193,7 +234,10 @@ class MainScene extends Phaser.Scene {
         // Удаляем предыдущий обработчик событий
         this.input.off('pointerdown', this.handleInput, this);
         
-        // СНАЧАЛА устанавливаем сид
+        // СНАЧАЛА обновляем модификатор гемов
+        this.updateGemModifier();
+        
+        // ПОТОМ устанавливаем сид
         setSeed(this.currentSeed);
         
         // ПОТОМ генерируем задание (которое использует getRandom)
@@ -209,7 +253,7 @@ class MainScene extends Phaser.Scene {
         this.updateMovesDisplay();
         this.updateObjectiveDisplay();
         this.updateProgressDisplay();
-        this.updateStatus(`Новая игра начата с сидом: ${this.currentSeed}`);
+        this.updateStatus(`Новая игра начата с сидом: ${this.currentSeed}, модификатор: тип ${this.gemModifier.targetGemType} x${this.gemModifier.multiplier}`);
         this.updateActionLog();
     }
 
@@ -272,7 +316,7 @@ class MainScene extends Phaser.Scene {
         }
     }
 
-    // Обновляем метод логирования для включения прогресса по заданию
+    // Обновляем метод логирования для включения модификатора
     logAction(action) {
         const timestamp = Date.now();
         const logEntry = {
@@ -282,7 +326,8 @@ class MainScene extends Phaser.Scene {
             seed: this.currentSeed,
             movesLeft: this.movesLeft,
             objective: this.objective,
-            progress: this.collectedGems[this.objective.gemType] || 0
+            progress: this.collectedGems[this.objective.gemType] || 0,
+            gemModifier: this.gemModifier // добавляем модификатор в лог
         };
         
         this.actionLog.push(logEntry);
@@ -310,6 +355,7 @@ class MainScene extends Phaser.Scene {
     exportActionLog() {
         const exportData = {
             seed: this.currentSeed,
+            gemModifier: this.gemModifier, // добавляем модификатор в экспорт
             actions: this.actionLog,
             timestamp: Date.now()
         };
@@ -337,9 +383,25 @@ class MainScene extends Phaser.Scene {
             this.currentSeed = importData.seed;
             this.seedInput.value = this.currentSeed.toString();
             
-            // Начинаем новую игру с импортированным сидом
+            // Восстанавливаем модификатор гемов из лога
+            if (importData.gemModifier) {
+                this.gemModifier = importData.gemModifier;
+                this.gemTypeInput.value = this.gemModifier.targetGemType.toString();
+                this.gemMultiplierInput.value = this.gemModifier.multiplier.toString();
+            }
+            
+            // Начинаем новую игру с импортированными настройками
             this.actionLog = [];
+            
+            // Обновляем модификатор ПЕРЕД установкой сида
+            this.updateGemModifier();
+            
+            // Устанавливаем сид
             setSeed(this.currentSeed);
+            
+            // Генерируем задание
+            this.generateObjective();
+            
             this.initializeGrid();
             this.processMatches();
             this.renderGrid();
@@ -410,6 +472,56 @@ class MainScene extends Phaser.Scene {
             this.sprites[action.to.y][action.to.x].setScale(1.2);
         }
     }
+
+    // Функция для детерминированной генерации гемов с модификатором
+    generateGemWithModifier() {
+        // Используем детерминированный генератор
+        const rand = getRandom(1, 10000) / 10000; // случайное число от 0 до 1
+        
+        // Базовая вероятность для каждого типа гема
+        const baseProb = 1 / ELEMENT_TYPES; // 0.2 для 5 типов
+        
+        // Увеличиваем вероятность целевого гема
+        const targetProb = baseProb * this.gemModifier.multiplier;
+        
+        // Нормализуем вероятности если они превышают 1
+        let totalProb = targetProb + (baseProb * (ELEMENT_TYPES - 1));
+        if (totalProb > 1) {
+            const normalizer = 1 / totalProb;
+            const normalizedTargetProb = targetProb * normalizer;
+            const normalizedOtherProb = baseProb * normalizer;
+            
+            // Генерируем гем на основе нормализованных вероятностей
+            let cumulative = 0;
+            
+            for (let gemType = 1; gemType <= ELEMENT_TYPES; gemType++) {
+                const prob = (gemType === this.gemModifier.targetGemType) ? normalizedTargetProb : normalizedOtherProb;
+                cumulative += prob;
+                
+                if (rand <= cumulative) {
+                    return gemType;
+                }
+            }
+        } else {
+            // Перераспределяем вероятности остальных гемов
+            const otherProb = (1 - targetProb) / (ELEMENT_TYPES - 1);
+            
+            // Генерируем гем на основе вероятностей
+            let cumulative = 0;
+            
+            for (let gemType = 1; gemType <= ELEMENT_TYPES; gemType++) {
+                const prob = (gemType === this.gemModifier.targetGemType) ? targetProb : otherProb;
+                cumulative += prob;
+                
+                if (rand <= cumulative) {
+                    return gemType;
+                }
+            }
+        }
+        
+        // Fallback - возвращаем целевой гем
+        return this.gemModifier.targetGemType;
+    }
     
     // Также обновим метод создания начальной сетки, чтобы избежать стартовых комбинаций
     createInitialGrid() {
@@ -422,7 +534,7 @@ class MainScene extends Phaser.Scene {
             for (let y = 0; y < GRID_HEIGHT; y++) {
                 const row = [];
                 for (let x = 0; x < GRID_WIDTH; x++) {
-                    row.push(getRandom(1, ELEMENT_TYPES));
+                    row.push(this.generateGemWithModifier());
                 }
                 grid.push(row);
             }
@@ -761,6 +873,20 @@ class MainScene extends Phaser.Scene {
         }
     }
 
+    // Обновляем функцию spawnNewElements чтобы использовать модификатор детерминированно
+    customSpawnNewElements(grid) {
+        const rows = grid.length;
+        const cols = grid[0].length;
+
+        for (let row = 0; row < rows; row++) {
+            for (let col = 0; col < cols; col++) {
+                if (grid[row][col] === 0) {
+                    grid[row][col] = this.generateGemWithModifier();
+                }
+            }
+        }
+    }
+
     processMatches() {
         let foundMatches = true;
         let cascadeCount = 0;
@@ -768,19 +894,12 @@ class MainScene extends Phaser.Scene {
         
         while (foundMatches && cascadeCount < 20) {
             const matches = detectMatches(this.grid);
-
-            // Отладочная информация
-            console.log('Результат detectMatches:', matches);
-            console.log('Тип matches:', typeof matches);
-            console.log('Является ли массивом:', Array.isArray(matches));
             
             if (matches && Array.isArray(matches) && matches.length > 0) {
                 console.log(`Найдено матчей: ${matches.length}, каскад #${cascadeCount + 1}`);
                 
                 // Подсчитываем собранные камни
                 matches.forEach((match, matchIndex) => {
-                    console.log(`Обрабатываем match ${matchIndex}:`, match);
-                    
                     // Проверяем, что match является массивом
                     if (Array.isArray(match)) {
                         match.forEach(({ x, y }) => {
@@ -800,7 +919,8 @@ class MainScene extends Phaser.Scene {
                 
                 removeMatches(this.grid, matches);
                 applyGravity(this.grid);
-                spawnNewElements(this.grid, getRandom);
+                // Используем нашу детерминированную функцию вместо стандартной
+                this.customSpawnNewElements(this.grid);
                 
                 cascadeCount++;
             } else {

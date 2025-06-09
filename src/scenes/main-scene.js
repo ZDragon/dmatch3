@@ -183,6 +183,16 @@ class MainScene extends Phaser.Scene {
         this.gameOver = false;
         this.collectedGems = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
         
+        // Принудительно очищаем все overlay элементы СНАЧАЛА
+        this.clearAllOverlays();
+    
+        // Скрываем окна победы/поражения СНАЧАЛА
+        this.hideGameOverWindow();
+        this.hideWinWindow();
+        
+        // Удаляем предыдущий обработчик событий
+        this.input.off('pointerdown', this.handleInput, this);
+        
         // СНАЧАЛА устанавливаем сид
         setSeed(this.currentSeed);
         
@@ -192,6 +202,8 @@ class MainScene extends Phaser.Scene {
         this.initializeGrid();
         this.processMatches();
         this.renderGrid();
+        
+        // Добавляем обработчик событий заново
         this.input.on('pointerdown', this.handleInput, this);
         
         this.updateMovesDisplay();
@@ -199,10 +211,6 @@ class MainScene extends Phaser.Scene {
         this.updateProgressDisplay();
         this.updateStatus(`Новая игра начата с сидом: ${this.currentSeed}`);
         this.updateActionLog();
-        
-        // Скрываем окна победы/поражения
-        this.hideGameOverWindow();
-        this.hideWinWindow();
     }
 
     generateObjective() {
@@ -431,8 +439,13 @@ class MainScene extends Phaser.Scene {
     renderGrid() {
         // Удаляем старые спрайты, если есть
         if (this.sprites) {
-            this.sprites.forEach(row => row.forEach(sprite => sprite && sprite.destroy()));
+            this.sprites.forEach(row => row.forEach(sprite => {
+                if (sprite && sprite.destroy) {
+                    sprite.destroy(true);
+                }
+            }));
         }
+        
         this.sprites = [];
         for (let y = 0; y < GRID_HEIGHT; y++) {
             const row = [];
@@ -441,18 +454,41 @@ class MainScene extends Phaser.Scene {
                 const sprite = this.add.image(
                     x * (elementWidth + elementSpacing) + elementWidth / 2,
                     y * (elementHeight + elementSpacing) + elementHeight / 2,
-                    `gem${gemType}` // используем разные спрайты
+                    `gem${gemType}`
                 );
-                sprite.setDisplaySize(gemSize, gemSize); // уменьшенный размер для отступов
-                sprite.setInteractive(); // делаем спрайт интерактивным
+                sprite.setDisplaySize(gemSize, gemSize);
+                sprite.setInteractive({ useHandCursor: true }); // добавляем курсор для интерактивности
+                sprite.setDepth(1); // устанавливаем низкий depth для игровых элементов
                 sprite.gridX = x;
                 sprite.gridY = y;
                 row.push(sprite);
             }
             this.sprites.push(row);
         }
+        
+        console.log('Сетка отрендерена, спрайтов:', this.sprites.length * this.sprites[0].length);
     }
 
+    // Добавьте метод для принудительной очистки всех overlay элементов
+    clearAllOverlays() {
+        // Удаляем все элементы с depth >= 100
+        if (this.children && this.children.list) {
+            const overlayElements = this.children.list.filter(child => child.depth >= 100);
+            overlayElements.forEach(element => {
+                try {
+                    element.destroy(true);
+                } catch (e) {
+                    console.warn('Ошибка при удалении overlay элемента:', e);
+                }
+            });
+        }
+        
+        // Очищаем массивы элементов
+        this.gameOverElements = [];
+        this.winElements = [];
+        this.gameOverOverlay = null;
+        this.gameOverWindow = null;
+    }
 
     update() {
         // Update game state here
@@ -463,14 +499,25 @@ class MainScene extends Phaser.Scene {
         this.grid = this.createInitialGrid();
     }
 
+    // Обновите обработчик ввода для отладки
     handleInput(pointer) {
-        if (this.isReplaying || this.gameOver) return; // Блокируем ввод во время реплея или если игра окончена
+        console.log('handleInput вызван, gameOver:', this.gameOver, 'isReplaying:', this.isReplaying);
+        
+        if (this.isReplaying || this.gameOver) {
+            console.log('Ввод заблокирован');
+            return;
+        }
         
         const x = Math.floor(pointer.x / (elementWidth + elementSpacing));
         const y = Math.floor(pointer.y / (elementHeight + elementSpacing));
-    
-        if (x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT) return;
-    
+
+        console.log('Клик по координатам:', x, y);
+
+        if (x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT) {
+            console.log('Клик за пределами сетки');
+            return;
+        }
+
         if (this.selectedElement) {
             const dx = Math.abs(this.selectedElement.x - x);
             const dy = Math.abs(this.selectedElement.y - y);
@@ -496,6 +543,7 @@ class MainScene extends Phaser.Scene {
         } else {
             this.selectedElement = { x, y };
             this.highlightElement(x, y);
+            console.log('Выбран элемент:', this.selectedElement);
         }
     }
 
@@ -635,6 +683,22 @@ class MainScene extends Phaser.Scene {
         // Очищаем ссылки
         this.gameOverOverlay = null;
         this.gameOverWindow = null;
+
+        // Принудительная очистка всех overlay элементов
+        this.clearAllOverlays();
+        
+        // Дополнительная очистка всех элементов с высоким depth
+        if (this.children && this.children.list) {
+            this.children.list.forEach(child => {
+                if (child && child.depth >= 100) {
+                    try {
+                        child.destroy(true);
+                    } catch (e) {
+                        console.warn('Ошибка при удалении элемента:', e);
+                    }
+                }
+            });
+        }
     }
 
     swapElements(from, to, shouldLog = true) {
@@ -875,6 +939,22 @@ class MainScene extends Phaser.Scene {
             });
             this.winElements = [];
         }
+        
+        // Дополнительная очистка всех элементов с высоким depth
+        if (this.children && this.children.list) {
+            this.children.list.forEach(child => {
+                if (child && child.depth >= 100) {
+                    try {
+                        child.destroy(true);
+                    } catch (e) {
+                        console.warn('Ошибка при удалении элемента:', e);
+                    }
+                }
+            });
+        }
+
+        // Принудительная очистка всех overlay элементов
+        this.clearAllOverlays();
     }
 
     // Опциональный метод для задержки (если нужны анимации)

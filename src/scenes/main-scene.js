@@ -35,6 +35,17 @@ class MainScene extends Phaser.Scene {
             targetGemType: 1, // какой тип гема усиливать (1-5)
             multiplier: 1.0   // множитель частоты (1.0 = нормально, 2.0 = в 2 раза чаще)
         };
+
+        // Добавляем счетчик вызовов генератора для отладки
+        this.randomCallCounter = 0;
+    }
+
+    // Обертка над getRandom для отслеживания вызовов
+    getRandomTracked(min, max, context = 'unknown') {
+        this.randomCallCounter++;
+        const result = getRandom(min, max);
+        console.log(`Random call #${this.randomCallCounter} [${context}]: ${result} (${min}-${max})`);
+        return result;
     }
     
     preload() {
@@ -223,47 +234,49 @@ class MainScene extends Phaser.Scene {
         this.movesLeft = MAX_MOVES;
         this.gameOver = false;
         this.collectedGems = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+        this.randomCallCounter = 0; // Сбрасываем счетчик
         
         // Принудительно очищаем все overlay элементы СНАЧАЛА
         this.clearAllOverlays();
-    
-        // Скрываем окна победы/поражения СНАЧАЛА
         this.hideGameOverWindow();
         this.hideWinWindow();
         
         // Удаляем предыдущий обработчик событий
         this.input.off('pointerdown', this.handleInput, this);
         
-        // СНАЧАЛА обновляем модификатор гемов
+        // КРИТИЧЕСКИ ВАЖНЫЙ ПОРЯДОК:
+        // 1. Обновляем модификатор (НЕ использует getRandom)
         this.updateGemModifier();
         
-        // ПОТОМ устанавливаем сид
+        // 2. Устанавливаем сид
         setSeed(this.currentSeed);
+        console.log(`Сид установлен: ${this.currentSeed}, модификатор: тип ${this.gemModifier.targetGemType} x${this.gemModifier.multiplier}`);
         
-        // ПОТОМ генерируем задание (которое использует getRandom)
+        // 3. Генерируем задание (использует getRandom 2 раза)
         this.generateObjective();
         
-        this.initializeGrid();
-        this.processMatches();
+        // 4. Создаем сетку БЕЗ обработки матчей
+        this.grid = this.createInitialGridDeterministic();
+        
+        // 5. Рендерим сетку
         this.renderGrid();
         
-        // Добавляем обработчик событий заново
+        // Добавляем обработчик событий
         this.input.on('pointerdown', this.handleInput, this);
         
         this.updateMovesDisplay();
         this.updateObjectiveDisplay();
         this.updateProgressDisplay();
-        this.updateStatus(`Новая игра начата с сидом: ${this.currentSeed}, модификатор: тип ${this.gemModifier.targetGemType} x${this.gemModifier.multiplier}`);
+        this.updateStatus(`Игра начата. Сид: ${this.currentSeed}, Random calls: ${this.randomCallCounter}`);
         this.updateActionLog();
     }
 
     generateObjective() {
-        // Список цветов камней
         const gemNames = ['красных', 'синих', 'зеленых', 'желтых', 'фиолетовых'];
         
-        // Случайно выбираем цвет и количество
-        const targetGemType = getRandom(1, ELEMENT_TYPES);
-        const targetAmount = getRandom(15, 25); // от 15 до 25 камней
+        // ДЕТЕРМИНИРОВАННЫЙ порядок вызовов
+        const targetGemType = this.getRandomTracked(1, ELEMENT_TYPES, 'objective-type');
+        const targetAmount = this.getRandomTracked(15, 25, 'objective-amount');
         
         this.objective = {
             gemType: targetGemType,
@@ -316,7 +329,7 @@ class MainScene extends Phaser.Scene {
         }
     }
 
-    // Обновляем метод логирования для включения модификатора
+    // Обновляем логирование для включения состояния генератора
     logAction(action) {
         const timestamp = Date.now();
         const logEntry = {
@@ -327,7 +340,8 @@ class MainScene extends Phaser.Scene {
             movesLeft: this.movesLeft,
             objective: this.objective,
             progress: this.collectedGems[this.objective.gemType] || 0,
-            gemModifier: this.gemModifier // добавляем модификатор в лог
+            gemModifier: this.gemModifier,
+            randomCallCounter: this.randomCallCounter // Добавляем счетчик вызовов
         };
         
         this.actionLog.push(logEntry);
@@ -372,6 +386,7 @@ class MainScene extends Phaser.Scene {
         });
     }
 
+    // Обновляем импорт для проверки детерминированности
     importAndReplay() {
         try {
             const importData = JSON.parse(this.logInput.value);
@@ -380,31 +395,31 @@ class MainScene extends Phaser.Scene {
                 throw new Error('Неверный формат данных');
             }
             
+            console.log('=== НАЧАЛО ИМПОРТА И РЕПЛЕЯ ===');
+            
             this.currentSeed = importData.seed;
             this.seedInput.value = this.currentSeed.toString();
             
-            // Восстанавливаем модификатор гемов из лога
+            // Восстанавливаем модификатор
             if (importData.gemModifier) {
                 this.gemModifier = importData.gemModifier;
                 this.gemTypeInput.value = this.gemModifier.targetGemType.toString();
                 this.gemMultiplierInput.value = this.gemModifier.multiplier.toString();
             }
             
-            // Начинаем новую игру с импортированными настройками
+            // Начинаем новую игру с точно такими же параметрами
             this.actionLog = [];
-            
-            // Обновляем модификатор ПЕРЕД установкой сида
             this.updateGemModifier();
-            
-            // Устанавливаем сид
             setSeed(this.currentSeed);
+            this.randomCallCounter = 0;
             
-            // Генерируем задание
             this.generateObjective();
-            
-            this.initializeGrid();
-            this.processMatches();
+            this.grid = this.createInitialGridDeterministic();
             this.renderGrid();
+            
+            console.log(`Состояние после инициализации: Random calls = ${this.randomCallCounter}`);
+            console.log('Objective:', this.objective);
+            console.log('Grid:', this.grid);
             
             // Запускаем реплей
             this.startReplay(importData.actions);
@@ -473,58 +488,34 @@ class MainScene extends Phaser.Scene {
         }
     }
 
-    // Функция для детерминированной генерации гемов с модификатором
-    generateGemWithModifier() {
-        // Используем детерминированный генератор
-        const rand = getRandom(1, 10000) / 10000; // случайное число от 0 до 1
+    // Детерминированная генерация с модификатором
+    generateGemWithModifier(context = 'unknown') {
+        const rand = this.getRandomTracked(1, 10000, `gem-${context}`) / 10000;
         
-        // Базовая вероятность для каждого типа гема
-        const baseProb = 1 / ELEMENT_TYPES; // 0.2 для 5 типов
+        // Базовая вероятность
+        const baseProb = 1 / ELEMENT_TYPES;
+        const targetProb = Math.min(baseProb * this.gemModifier.multiplier, 0.95);
         
-        // Увеличиваем вероятность целевого гема
-        const targetProb = baseProb * this.gemModifier.multiplier;
+        // Нормализация вероятностей
+        const totalTargetProb = targetProb;
+        const remainingProb = 1 - totalTargetProb;
+        const otherProb = remainingProb / (ELEMENT_TYPES - 1);
         
-        // Нормализуем вероятности если они превышают 1
-        let totalProb = targetProb + (baseProb * (ELEMENT_TYPES - 1));
-        if (totalProb > 1) {
-            const normalizer = 1 / totalProb;
-            const normalizedTargetProb = targetProb * normalizer;
-            const normalizedOtherProb = baseProb * normalizer;
+        let cumulative = 0;
+        for (let gemType = 1; gemType <= ELEMENT_TYPES; gemType++) {
+            const prob = (gemType === this.gemModifier.targetGemType) ? targetProb : otherProb;
+            cumulative += prob;
             
-            // Генерируем гем на основе нормализованных вероятностей
-            let cumulative = 0;
-            
-            for (let gemType = 1; gemType <= ELEMENT_TYPES; gemType++) {
-                const prob = (gemType === this.gemModifier.targetGemType) ? normalizedTargetProb : normalizedOtherProb;
-                cumulative += prob;
-                
-                if (rand <= cumulative) {
-                    return gemType;
-                }
-            }
-        } else {
-            // Перераспределяем вероятности остальных гемов
-            const otherProb = (1 - targetProb) / (ELEMENT_TYPES - 1);
-            
-            // Генерируем гем на основе вероятностей
-            let cumulative = 0;
-            
-            for (let gemType = 1; gemType <= ELEMENT_TYPES; gemType++) {
-                const prob = (gemType === this.gemModifier.targetGemType) ? targetProb : otherProb;
-                cumulative += prob;
-                
-                if (rand <= cumulative) {
-                    return gemType;
-                }
+            if (rand <= cumulative) {
+                return gemType;
             }
         }
         
-        // Fallback - возвращаем целевой гем
-        return this.gemModifier.targetGemType;
+        return 1; // Fallback
     }
     
-    // Также обновим метод создания начальной сетки, чтобы избежать стартовых комбинаций
-    createInitialGrid() {
+    // Детерминированное создание сетки
+    createInitialGridDeterministic() {
         let grid;
         let attempts = 0;
         const maxAttempts = 100;
@@ -534,17 +525,24 @@ class MainScene extends Phaser.Scene {
             for (let y = 0; y < GRID_HEIGHT; y++) {
                 const row = [];
                 for (let x = 0; x < GRID_WIDTH; x++) {
-                    row.push(this.generateGemWithModifier());
+                    row.push(this.generateGemWithModifier(`initial-${y}-${x}`));
                 }
                 grid.push(row);
             }
             attempts++;
-        } while (detectMatches(grid).length > 0 && attempts < maxAttempts);
+            
+            const matches = detectMatches(grid);
+            if (matches.length === 0) break;
+            
+            console.log(`Попытка ${attempts}: найдено ${matches.length} матчей, пересоздаем сетку`);
+            
+        } while (attempts < maxAttempts);
         
         if (attempts >= maxAttempts) {
-            console.warn('Не удалось создать сетку без начальных матчей');
+            console.warn('Не удалось создать сетку без начальных матчей за 100 попыток');
         }
         
+        console.log(`Сетка создана за ${attempts} попыток, Random calls: ${this.randomCallCounter}`);
         return grid;
     }
     
@@ -608,7 +606,7 @@ class MainScene extends Phaser.Scene {
 
     initializeGrid() {
         // Initialize the grid with elements
-        this.grid = this.createInitialGrid();
+        this.grid = this.createInitialGridDeterministic();
     }
 
     // Обновите обработчик ввода для отладки
@@ -813,13 +811,18 @@ class MainScene extends Phaser.Scene {
         }
     }
 
+    // Обновляем swapElements для детерминированности
     swapElements(from, to, shouldLog = true) {
+        console.log(`Обмен: (${from.x},${from.y}) <-> (${to.x},${to.y}), Random calls before: ${this.randomCallCounter}`);
+        
         const temp = this.grid[from.y][from.x];
         this.grid[from.y][from.x] = this.grid[to.y][to.x];
         this.grid[to.y][to.x] = temp;
 
         this.processMatches();
         this.renderGrid();
+        
+        console.log(`Обмен завершен, Random calls after: ${this.randomCallCounter}`);
     }
     
     highlightElement(x, y) {
@@ -873,54 +876,53 @@ class MainScene extends Phaser.Scene {
         }
     }
 
-    // Обновляем функцию spawnNewElements чтобы использовать модификатор детерминированно
-    customSpawnNewElements(grid) {
+    // Детерминированное заполнение пустых мест
+    customSpawnNewElements(grid, cascadeNumber = 0) {
         const rows = grid.length;
         const cols = grid[0].length;
+        let spawnCount = 0;
 
         for (let row = 0; row < rows; row++) {
             for (let col = 0; col < cols; col++) {
                 if (grid[row][col] === 0) {
-                    grid[row][col] = this.generateGemWithModifier();
+                    grid[row][col] = this.generateGemWithModifier(`spawn-c${cascadeNumber}-${row}-${col}`);
+                    spawnCount++;
                 }
             }
         }
+        
+        console.log(`Заспавнено ${spawnCount} гемов в каскаде ${cascadeNumber}`);
     }
 
+    // Детерминированная обработка матчей
     processMatches() {
         let foundMatches = true;
         let cascadeCount = 0;
         let totalCollected = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
         
         while (foundMatches && cascadeCount < 20) {
-            const matches = detectMatches(this.grid);
+            const matches = this.detectMatchesDeterministic(this.grid);
             
-            if (matches && Array.isArray(matches) && matches.length > 0) {
-                console.log(`Найдено матчей: ${matches.length}, каскад #${cascadeCount + 1}`);
+            if (matches && matches.length > 0) {
+                console.log(`Каскад #${cascadeCount + 1}: найдено ${matches.length} матчей`);
                 
                 // Подсчитываем собранные камни
                 matches.forEach((match, matchIndex) => {
-                    // Проверяем, что match является массивом
                     if (Array.isArray(match)) {
                         match.forEach(({ x, y }) => {
-                            if (typeof x === 'number' && typeof y === 'number' && 
-                                y >= 0 && y < this.grid.length && 
-                                x >= 0 && x < this.grid[0].length) {
+                            if (y >= 0 && y < this.grid.length && x >= 0 && x < this.grid[0].length) {
                                 const gemType = this.grid[y][x];
-                                if (gemType && gemType >= 1 && gemType <= 5) {
+                                if (gemType >= 1 && gemType <= 5) {
                                     totalCollected[gemType]++;
                                 }
                             }
                         });
-                    } else {
-                        console.error('Match не является массивом:', match);
                     }
                 });
                 
                 removeMatches(this.grid, matches);
                 applyGravity(this.grid);
-                // Используем нашу детерминированную функцию вместо стандартной
-                this.customSpawnNewElements(this.grid);
+                this.customSpawnNewElements(this.grid, cascadeCount);
                 
                 cascadeCount++;
             } else {
@@ -928,23 +930,42 @@ class MainScene extends Phaser.Scene {
             }
         }
         
-        // Обновляем счетчики собранных камней
+        // Обновляем счетчики
         Object.keys(totalCollected).forEach(gemType => {
             if (totalCollected[gemType] > 0) {
                 this.collectedGems[gemType] = (this.collectedGems[gemType] || 0) + totalCollected[gemType];
-                console.log(`Собрано камней типа ${gemType}: +${totalCollected[gemType]} (всего: ${this.collectedGems[gemType]})`);
             }
         });
         
-        // Обновляем отображение прогресса
         this.updateProgressDisplay();
-        
-        // Проверяем победу
         this.checkWinCondition();
         
-        if (cascadeCount > 0) {
-            console.log(`Обработано каскадов: ${cascadeCount}`);
+        console.log(`Обработано каскадов: ${cascadeCount}, Random calls: ${this.randomCallCounter}`);
+    }
+
+    // Детерминированная детекция матчей (сортируем результат)
+    detectMatchesDeterministic(grid) {
+        const matches = detectMatches(grid);
+        
+        // Сортируем матчи для детерминированности
+        if (matches && matches.length > 0) {
+            matches.forEach(match => {
+                if (Array.isArray(match)) {
+                    match.sort((a, b) => {
+                        if (a.y !== b.y) return a.y - b.y;
+                        return a.x - b.x;
+                    });
+                }
+            });
+            
+            matches.sort((a, b) => {
+                if (!Array.isArray(a) || !Array.isArray(b) || a.length === 0 || b.length === 0) return 0;
+                if (a[0].y !== b[0].y) return a[0].y - b[0].y;
+                return a[0].x - b[0].x;
+            });
         }
+        
+        return matches;
     }
 
     checkWinCondition() {

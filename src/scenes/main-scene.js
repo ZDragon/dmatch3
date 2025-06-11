@@ -1,9 +1,7 @@
 import Phaser from 'phaser';
 import { UIManager } from '../ui/UIManager';
 import { GameLogic } from '../core/GameLogic';
-import { AnimationManager } from '../animations/AnimationManager';
 import { ReplayManager } from '../core/ReplayManager';
-import { getRandom, setSeed } from '../core/deterministic';
 
 const GRID_WIDTH = 8;
 const GRID_HEIGHT = 8;
@@ -43,7 +41,6 @@ export class MainScene extends Phaser.Scene {
         // Инициализация менеджеров
         this.uiManager = new UIManager(this);
         this.gameLogic = new GameLogic(this);
-        this.animationManager = new AnimationManager(this);
         this.replayManager = new ReplayManager(this);
     }
 
@@ -81,18 +78,18 @@ export class MainScene extends Phaser.Scene {
         
         // Поле ввода сида
         this.add.text(uiX, uiY, 'Seed:', { fontSize: '14px', fill: '#000' });
-        this.seedInput = this.createInputField(uiX, uiY + 20, 80, 20, this.currentSeed.toString());
+        this.seedInput = this.uiManager.createInputField(uiX, uiY + 20, 80, 20, this.currentSeed.toString());
         
         // Модификатор гемов
         this.add.text(uiX, uiY - 30, 'Gem Modifier:', { fontSize: '14px', fill: '#000' });
         
         // Поле выбора типа гема
         this.add.text(uiX, uiY - 10, 'Тип (1-5):', { fontSize: '12px', fill: '#000' });
-        this.gemTypeInput = this.createInputField(uiX + 65, uiY - 15, 30, 20, this.gemModifier.targetGemType.toString());
+        this.gemTypeInput = this.uiManager.createInputField(uiX + 65, uiY - 15, 30, 20, this.gemModifier.targetGemType.toString());
         
         // Поле множителя
         this.add.text(uiX + 105, uiY - 10, 'x:', { fontSize: '12px', fill: '#000' });
-        this.gemMultiplierInput = this.createInputField(uiX + 120, uiY - 15, 40, 20, this.gemModifier.multiplier.toString());
+        this.gemMultiplierInput = this.uiManager.createInputField(uiX + 120, uiY - 15, 40, 20, this.gemModifier.multiplier.toString());
 
         // Счетчик ходов
         this.movesText = this.add.text(uiX, uiY + 50, `Ходы: ${this.movesLeft}`, { 
@@ -117,24 +114,24 @@ export class MainScene extends Phaser.Scene {
         });
         
         // Кнопка "Новая игра"
-        this.createButton(uiX, uiY + 160, 100, 25, 'Новая игра', () => {
+        this.uiManager.createButton(uiX, uiY + 160, 100, 25, 'Новая игра', () => {
             this.currentSeed = parseInt(this.seedInput.value) || 12345;
             this.updateGemModifier();
             this.startNewGame();
         });
         
         // Кнопка "Экспорт лога"
-        this.createButton(uiX, uiY + 195, 100, 25, 'Экспорт лога', () => {
+        this.uiManager.createButton(uiX, uiY + 195, 100, 25, 'Экспорт лога', () => {
             this.exportActionLog();
         });
         
         // Поле загрузки лога
         this.add.text(uiX, uiY + 230, 'Импорт лога:', { fontSize: '12px', fill: '#000' });
-        this.logInput = this.createInputField(uiX, uiY + 250, 140, 40, 'Вставьте лог...');
+        this.logInput = this.uiManager.createInputField(uiX, uiY + 250, 140, 40, 'Вставьте лог...');
         
         // Кнопка "Импорт и реплей"
-        this.createButton(uiX, uiY + 300, 100, 25, 'Реплей', () => {
-            this.importAndReplay();
+        this.uiManager.createButton(uiX, uiY + 300, 100, 25, 'Реплей', () => {
+            this.replayManager.importAndReplay();
         });
         
         // Текст статуса
@@ -175,54 +172,6 @@ export class MainScene extends Phaser.Scene {
         console.log('Gem Modifier обновлен:', this.gemModifier);
     }
 
-    createInputField(x, y, width, height, placeholder) {
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.value = placeholder;
-        input.style.position = 'absolute';
-        
-        // Получаем позицию canvas
-        const canvas = this.game.canvas;
-        const rect = canvas.getBoundingClientRect();
-        
-        input.style.left = (rect.left + x) + 'px';
-        input.style.top = (rect.top + y) + 'px';
-        input.style.width = width + 'px';
-        input.style.height = height + 'px';
-        input.style.zIndex = '1000';
-        input.style.fontSize = '12px';
-        input.style.padding = '2px';
-        input.style.border = '1px solid #ccc';
-        input.style.backgroundColor = '#fff';
-        input.style.borderRadius = '3px';
-        
-        document.body.appendChild(input);
-        return input;
-    }
-
-    createButton(x, y, width, height, text, callback) {
-        // Создаем прямоугольник с обводкой
-        const button = this.add.rectangle(x + width/2, y + height/2, width, height, 0x4CAF50)
-            .setStrokeStyle(1, 0x2E7D32)
-            .setInteractive()
-            .on('pointerdown', callback)
-            .on('pointerover', () => {
-                button.setFillStyle(0x66BB6A);
-            })
-            .on('pointerout', () => {
-                button.setFillStyle(0x4CAF50);
-            });
-            
-        // Создаем текст на кнопке
-        this.add.text(x + width/2, y + height/2, text, { 
-            fontSize: '12px', 
-            fill: '#fff',
-            fontWeight: 'bold'
-        }).setOrigin(0.5);
-        
-        return button;
-    }
-
     startNewGame() {
         this.actionLog = [];
         this.selectedElement = null;
@@ -246,7 +195,7 @@ export class MainScene extends Phaser.Scene {
         this.updateGemModifier();
         
         // 2. Устанавливаем сид
-        setSeed(this.currentSeed);
+        this.gameLogic.setSeed(this.currentSeed);
         console.log(`Сид установлен: ${this.currentSeed}, модификатор: тип ${this.gemModifier.targetGemType} x${this.gemModifier.multiplier}`);
         
         // 3. Генерируем задание (использует getRandom 2 раза)
@@ -383,108 +332,6 @@ export class MainScene extends Phaser.Scene {
         });
     }
 
-    // Обновляем импорт для проверки детерминированности
-    importAndReplay() {
-        try {
-            const importData = JSON.parse(this.logInput.value);
-            
-            if (!importData.seed || !importData.actions) {
-                throw new Error('Неверный формат данных');
-            }
-            
-            console.log('=== НАЧАЛО ИМПОРТА И РЕПЛЕЯ ===');
-            
-            this.currentSeed = importData.seed;
-            this.seedInput.value = this.currentSeed.toString();
-            
-            // Восстанавливаем модификатор
-            if (importData.gemModifier) {
-                this.gemModifier = importData.gemModifier;
-                this.gemTypeInput.value = this.gemModifier.targetGemType.toString();
-                this.gemMultiplierInput.value = this.gemModifier.multiplier.toString();
-            }
-            
-            // Начинаем новую игру с точно такими же параметрами
-            this.actionLog = [];
-            this.updateGemModifier();
-            setSeed(this.currentSeed);
-            this.randomCallCounter = 0;
-            
-            this.generateObjective();
-            this.grid = this.createInitialGridDeterministic();
-            this.renderGrid();
-            
-            console.log(`Состояние после инициализации: Random calls = ${this.randomCallCounter}`);
-            console.log('Objective:', this.objective);
-            console.log('Grid:', this.grid);
-            
-            // Запускаем реплей
-            this.startReplay(importData.actions);
-            
-        } catch (error) {
-            this.updateStatus(`Ошибка импорта: ${error.message}`);
-        }
-    }
-
-    startReplay(actions) {
-        this.isReplaying = true;
-        this.replayIndex = 0;
-        this.replayActions = actions;
-        
-        this.updateStatus(`Начинаем реплей ${actions.length} действий...`);
-        
-        // Запускаем реплей с задержкой между действиями
-        this.replayNextAction();
-    }
-
-    // Обновляем метод реплея для учета ходов
-    replayNextAction() {
-        if (this.replayIndex >= this.replayActions.length) {
-            this.isReplaying = false;
-            this.updateStatus('Реплей завершен');
-            return;
-        }
-        
-        const actionEntry = this.replayActions[this.replayIndex];
-        const action = actionEntry.data;
-        
-        this.updateStatus(`Воспроизводим действие ${this.replayIndex + 1}/${this.replayActions.length}: ${action.type}`);
-        
-        // Подсвечиваем выполняемое действие
-        if (action.type === 'swap') {
-            this.highlightReplayAction(action);
-            
-            // Выполняем обмен
-            setTimeout(() => {
-                // В реплее не уменьшаем ходы, просто выполняем действие
-                this.swapElements(action.from, action.to, false);
-                this.replayIndex++;
-                
-                // Продолжаем через 1 секунду
-                setTimeout(() => this.replayNextAction(), 1000);
-            }, 500);
-        } else {
-            this.replayIndex++;
-            setTimeout(() => this.replayNextAction(), 100);
-        }
-    }
-
-    highlightReplayAction(action) {
-        // Очищаем предыдущие подсветки
-        this.clearSelection();
-        
-        // Подсвечиваем элементы участвующие в действии
-        if (this.sprites[action.from.y] && this.sprites[action.from.y][action.from.x]) {
-            this.sprites[action.from.y][action.from.x].setTint(0xff0000); // красный
-            this.sprites[action.from.y][action.from.x].setScale(1.2);
-        }
-        
-        if (this.sprites[action.to.y] && this.sprites[action.to.y][action.to.x]) {
-            this.sprites[action.to.y][action.to.x].setTint(0x0000ff); // синий
-            this.sprites[action.to.y][action.to.x].setScale(1.2);
-        }
-    }
-
     generateGemWithModifier(context = 'unknown') {
         const rand = this.getRandomTracked(1, 10000, `gem-${context}`) / 10000;
         const baseProb = 1 / ELEMENT_TYPES;
@@ -508,7 +355,7 @@ export class MainScene extends Phaser.Scene {
 
     getRandomTracked(min, max, context = 'unknown') {
         this.randomCallCounter++;
-        const result = getRandom(min, max);
+        const result = this.gameLogic.getRandom(min, max);
         console.log(`Random call #${this.randomCallCounter} [${context}]: ${result} (${min}-${max})`);
         return result;
     }
@@ -659,7 +506,7 @@ export class MainScene extends Phaser.Scene {
         this.grid[to.y][to.x] = temp;
         
         // Проверяем, есть ли матчи
-        const matches = detectMatches(this.grid);
+        const matches = this.gameLogic.detectMatches(this.grid);
         
         // Возвращаем обмен обратно
         this.grid[to.y][to.x] = this.grid[from.y][from.x];
@@ -966,13 +813,13 @@ export class MainScene extends Phaser.Scene {
                 });
                 
                 // Удаляем матчи
-                removeMatches(this.grid, matches);
+                this.gameLogic.removeMatches(this.grid, matches);
                 
                 // Анимируем падение элементов
                 await this.animateGravity();
                 
                 // Применяем гравитацию
-                applyGravity(this.grid);
+                this.gameLogic.applyGravity(this.grid);
                 
                 // Заполняем новыми элементами
                 this.customSpawnNewElements(this.grid, cascadeCount);
@@ -1228,8 +1075,8 @@ export class MainScene extends Phaser.Scene {
                     }
                 });
                 
-                removeMatches(this.grid, matches);
-                applyGravity(this.grid);
+                this.gameLogic.removeMatches(this.grid, matches);
+                this.gameLogic.applyGravity(this.grid);
                 this.customSpawnNewElements(this.grid, cascadeCount);
                 
                 cascadeCount++;
@@ -1253,7 +1100,7 @@ export class MainScene extends Phaser.Scene {
 
     // Детерминированная детекция матчей (сортируем результат)
     detectMatchesDeterministic(grid) {
-        const matches = detectMatches(grid);
+        const matches = this.gameLogic.detectMatches(grid);
         
         // Сортируем матчи для детерминированности
         if (matches && matches.length > 0) {

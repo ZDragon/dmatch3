@@ -88,7 +88,7 @@ export class MenuScene extends Phaser.Scene {
             .setStrokeStyle(2, 0x000000);
             
         // Заголовок
-        this.add.text(width / 2, height / 2 - 100, 'Настройки', {
+       const title = this.add.text(width / 2, height / 2 - 100, 'Настройки', {
             fontSize: '32px',
             color: '#000000'
         }).setOrigin(0.5);
@@ -108,7 +108,7 @@ export class MenuScene extends Phaser.Scene {
                 }
             });
             
-        this.add.text(width / 2 - 50, height / 2, 'Фоновая музыка', {
+        const musicText = this.add.text(width / 2 - 50, height / 2, 'Фоновая музыка', {
             fontSize: '24px',
             color: '#000000'
         }).setOrigin(0, 0.5);
@@ -117,18 +117,16 @@ export class MenuScene extends Phaser.Scene {
         const closeButton = this.add.rectangle(width / 2, height / 2 + 100, 150, 40, 0x4CAF50)
             .setInteractive()
             .on('pointerdown', () => {
-                overlay.destroy();
-                settingsWindow.destroy();
-                closeButton.destroy();
-                musicCheckbox.destroy();
-                this.children.list.forEach(child => {
-                    if (child.type === 'Text' && child.text === 'Настройки' || child.text === 'Фоновая музыка') {
-                        child.destroy();
-                    }
-                });
+                overlay.destroy(true);
+                settingsWindow.destroy(true);
+                closeButton.destroy(true);
+                musicCheckbox.destroy(true);
+                title.destroy(true);
+                musicText.destroy(true);
+                closeText.destroy(true);
             });
             
-        this.add.text(width / 2, height / 2 + 100, 'Закрыть', {
+        const closeText = this.add.text(width / 2, height / 2 + 100, 'Закрыть', {
             fontSize: '20px',
             color: '#ffffff'
         }).setOrigin(0.5);

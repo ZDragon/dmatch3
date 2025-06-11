@@ -14,7 +14,7 @@ This project is a basic implementation of a Match-3 game engine built using Phas
 match3-engine/
 ├── src/
 │   ├── core/
-│   │   ├── game-logic.js      // Core game logic for match detection and gravity
+│   │   ├── GameLogic.js      // Core game logic for match detection and gravity
 │   │   ├── deterministic.js     // Random number generation with seed
 │   │   └── replay-system.js     // Recording and playback of user actions
 │   ├── scenes/
@@ -24,7 +24,7 @@ match3-engine/
 │   └── index.js                // Game initialization
 ├── assets/                     // Directory for sprite assets
 ├── tests/
-│   └── game-logic.test.js      // Automated tests for game logic
+│   └── GameLogic.test.js      // Automated tests for game logic
 └── README.md                   // Project documentation
 ```
 

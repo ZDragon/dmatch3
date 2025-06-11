@@ -1,4 +1,4 @@
-const { detectMatches, applyGravity, removeElements } = require('../src/core/game-logic');
+const { detectMatches, applyGravity, removeMatches } = require('../src/core/GameLogic');
 
 describe('Game Logic Tests', () => {
     test('Detect matches correctly', () => {
@@ -29,7 +29,7 @@ describe('Game Logic Tests', () => {
             [0, 0, 0, 0],
             [3, 0, 3, 3]
         ];
-        expect(removeElements(grid, matches)).toEqual(expectedGrid);
+        expect(removeMatches(grid, matches)).toEqual(expectedGrid);
     });
 
     test('Gravity applies correctly', () => {

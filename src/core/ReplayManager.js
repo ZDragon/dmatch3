@@ -1,17 +1,6 @@
 export class ReplayManager {
     constructor(scene) {
         this.scene = scene;
-        this.replayData = [];
-    }
-
-    recordAction(action) {
-        this.replayData.push(action);
-    }
-
-    playReplay(gameState, actions) {
-        actions.forEach(action => {
-            simulateUserMove(gameState, action.x, action.y);
-        });
     }
 
     // Обновляем импорт для проверки детерминированности
@@ -69,7 +58,7 @@ export class ReplayManager {
     }
 
     // Обновляем метод реплея для учета ходов
-    replayNextAction() {
+    async replayNextAction() {
         if (this.scene.replayIndex >= this.scene.replayActions.length) {
             this.scene.isReplaying = false;
             this.scene.updateStatus('Реплей завершен');
@@ -85,18 +74,22 @@ export class ReplayManager {
         if (action.type === 'swap') {
             this.highlightReplayAction(action);
             
-            // Выполняем обмен
-            setTimeout(() => {
-                // В реплее не уменьшаем ходы, просто выполняем действие
-                this.scene.swapElements(action.from, action.to, false);
-                this.scene.replayIndex++;
-                
-                // Продолжаем через 1 секунду
-                setTimeout(() => this.replayNextAction(), 1000);
-            }, 500);
+            // Ждем 500мс перед началом действия
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            // Выполняем обмен и ждем его завершения
+            await this.scene.swapElements(action.from, action.to, false);
+            this.scene.replayIndex++;
+            
+            // Ждем 1 секунду перед следующим действием
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Продолжаем реплей
+            this.replayNextAction();
         } else {
             this.replayIndex++;
-            setTimeout(() => this.replayNextAction(), 100);
+            await new Promise(resolve => setTimeout(resolve, 100));
+            this.replayNextAction();
         }
     }
 

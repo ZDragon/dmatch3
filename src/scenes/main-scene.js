@@ -59,8 +59,14 @@ export class MainScene extends Phaser.Scene {
     create() {
         this.cameras.main.setBackgroundColor('#ffffff');
         this.createUI();
-        this.startNewGame();
-    }    
+        
+        // Проверяем, есть ли сохраненное состояние
+        if (this.scene.settings.data.savedState) {
+            this.loadSavedState(this.scene.settings.data.savedState);
+        } else {
+            this.startNewGame();
+        }
+    }
 
     createUI() {
         // Размещаем UI справа от игрового поля
@@ -795,6 +801,9 @@ export class MainScene extends Phaser.Scene {
             if (matches && matches.length > 0) {
                 console.log(`Каскад #${cascadeCount + 1}: найдено ${matches.length} матчей`);
                 
+                // Воспроизводим звук совпадения
+                this.sound.play('match', { volume: 0.5 });
+                
                 // Анимируем найденные матчи
                 await this.animateMatches(matches);
                 
@@ -1256,6 +1265,45 @@ export class MainScene extends Phaser.Scene {
     // Опциональный метод для задержки (если нужны анимации)
     delay(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    loadSavedState(state) {
+        // Восстанавливаем состояние игры
+        this.grid = state.grid;
+        this.movesLeft = state.movesLeft;
+        this.gameOver = state.gameOver;
+        this.collectedGems = state.collectedGems;
+        this.objective = state.objective;
+        this.currentSeed = state.seed;
+        this.gemModifier = state.gemModifier;
+        this.randomCallCounter = state.randomCallCounter;
+        this.actionLog = state.actionLog;
+        
+        // Обновляем UI
+        this.renderGrid();
+        this.updateMovesDisplay();
+        this.updateObjectiveDisplay();
+        this.updateProgressDisplay();
+        this.updateStatus('Игра загружена');
+        this.updateActionLog();
+    }
+
+    // Добавляем метод сохранения состояния
+    saveGameState() {
+        const state = {
+            grid: this.grid,
+            movesLeft: this.movesLeft,
+            gameOver: this.gameOver,
+            collectedGems: this.collectedGems,
+            objective: this.objective,
+            seed: this.currentSeed,
+            gemModifier: this.gemModifier,
+            randomCallCounter: this.randomCallCounter,
+            actionLog: this.actionLog
+        };
+        
+        localStorage.setItem('match3-save', JSON.stringify(state));
+        this.updateStatus('Игра сохранена');
     }
 }
 

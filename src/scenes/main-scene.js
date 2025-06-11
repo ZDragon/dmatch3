@@ -36,6 +36,10 @@ export class MainScene extends Phaser.Scene {
         this.isReplaying = false;
         this.replayIndex = 0;
         
+        // Окна
+        this.gameOverWindow = null;
+        this.winWindow = null;
+        
         // Инициализация менеджеров
         this.uiManager = new UIManager(this);
         this.gameLogic = new GameLogic(this);
@@ -199,25 +203,27 @@ export class MainScene extends Phaser.Scene {
     }
 
     updateGemModifier() {
-        const targetType = parseInt(this.uiManager.gemTypeInput.value);
-        const multiplier = parseFloat(this.uiManager.gemMultiplierInput.value);
+        const targetType = parseInt(this.uiManager.gemTypeInput.text);
+        const multiplier = parseFloat(this.uiManager.gemMultiplierInput.text);
         
         if (targetType >= 1 && targetType <= ELEMENT_TYPES) {
             this.gemModifier.targetGemType = targetType;
         } else {
             this.gemModifier.targetGemType = 1;
-            this.uiManager.gemTypeInput.value = '1';
+            this.uiManager.gemTypeInput.setText('1');
         }
         
         if (multiplier >= 0.1 && multiplier <= 10.0) {
             this.gemModifier.multiplier = multiplier;
         } else {
             this.gemModifier.multiplier = 1.0;
-            this.uiManager.gemMultiplierInput.value = '1.0';
+            this.uiManager.gemMultiplierInput.setText('1.0');
         }
     }
 
     delay(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
-} 
+}
+
+export default MainScene; 

@@ -1,89 +1,88 @@
 import { getRandom, setSeed } from './deterministic';
 
-// Добавляем функции из game-logic.js
-function detectMatches(grid) {
-    const matches = [];
-    const rows = grid.length;
-    const cols = grid[0].length;
-
-    // Проверка горизонтальных совпадений
-    for (let y = 0; y < rows; y++) {
-        for (let x = 0; x < cols - 2; x++) {
-            const gemType = grid[y][x];
-            if (gemType && gemType === grid[y][x + 1] && gemType === grid[y][x + 2]) {
-                const match = { type: gemType, positions: [] };
-                let currentX = x;
-                while (currentX < cols && grid[y][currentX] === gemType) {
-                    match.positions.push({ x: currentX, y });
-                    currentX++;
-                }
-                matches.push(match);
-                x = currentX - 1;
-            }
-        }
-    }
-
-    // Проверка вертикальных совпадений
-    for (let x = 0; x < cols; x++) {
-        for (let y = 0; y < rows - 2; y++) {
-            const gemType = grid[y][x];
-            if (gemType && gemType === grid[y + 1][x] && gemType === grid[y + 2][x]) {
-                const match = { type: gemType, positions: [] };
-                let currentY = y;
-                while (currentY < rows && grid[currentY][x] === gemType) {
-                    match.positions.push({ x, y: currentY });
-                    currentY++;
-                }
-                matches.push(match);
-                y = currentY - 1;
-            }
-        }
-    }
-
-    return matches;
-}
-
-function removeMatches(grid, matches) {
-    matches.forEach(match => {
-        match.positions.forEach(pos => {
-            grid[pos.y][pos.x] = null;
-        });
-    });
-}
-
-function applyGravity(grid) {
-    const cols = grid[0].length;
-    const rows = grid.length;
-
-    for (let x = 0; x < cols; x++) {
-        let emptySpaces = 0;
-        for (let y = rows - 1; y >= 0; y--) {
-            if (grid[y][x] === null) {
-                emptySpaces++;
-            } else if (emptySpaces > 0) {
-                grid[y + emptySpaces][x] = grid[y][x];
-                grid[y][x] = null;
-            }
-        }
-    }
-}
-
-function spawnNewElements(grid, generateGem) {
-    const cols = grid[0].length;
-    const rows = grid.length;
-
-    for (let x = 0; x < cols; x++) {
-        for (let y = 0; y < rows; y++) {
-            if (grid[y][x] === null) {
-                grid[y][x] = generateGem();
-            }
-        }
-    }
-}
-
 export class GameLogic {
     constructor(scene) {
         this.scene = scene;
+    }
+
+    detectMatches(grid) {
+        const matches = [];
+        const rows = grid.length;
+        const cols = grid[0].length;
+
+        // Проверка горизонтальных совпадений
+        for (let y = 0; y < rows; y++) {
+            for (let x = 0; x < cols - 2; x++) {
+                const gemType = grid[y][x];
+                if (gemType && gemType === grid[y][x + 1] && gemType === grid[y][x + 2]) {
+                    const match = { type: gemType, positions: [] };
+                    let currentX = x;
+                    while (currentX < cols && grid[y][currentX] === gemType) {
+                        match.positions.push({ x: currentX, y });
+                        currentX++;
+                    }
+                    matches.push(match);
+                    x = currentX - 1;
+                }
+            }
+        }
+
+        // Проверка вертикальных совпадений
+        for (let x = 0; x < cols; x++) {
+            for (let y = 0; y < rows - 2; y++) {
+                const gemType = grid[y][x];
+                if (gemType && gemType === grid[y + 1][x] && gemType === grid[y + 2][x]) {
+                    const match = { type: gemType, positions: [] };
+                    let currentY = y;
+                    while (currentY < rows && grid[currentY][x] === gemType) {
+                        match.positions.push({ x, y: currentY });
+                        currentY++;
+                    }
+                    matches.push(match);
+                    y = currentY - 1;
+                }
+            }
+        }
+
+        return matches;
+    }
+
+    removeMatches(grid, matches) {
+        matches.forEach(match => {
+            match.positions.forEach(pos => {
+                grid[pos.y][pos.x] = null;
+            });
+        });
+    }
+
+    applyGravity(grid) {
+        const cols = grid[0].length;
+        const rows = grid.length;
+
+        for (let x = 0; x < cols; x++) {
+            let emptySpaces = 0;
+            for (let y = rows - 1; y >= 0; y--) {
+                if (grid[y][x] === null) {
+                    emptySpaces++;
+                } else if (emptySpaces > 0) {
+                    grid[y + emptySpaces][x] = grid[y][x];
+                    grid[y][x] = null;
+                }
+            }
+        }
+    }
+
+    spawnNewElements(grid, generateGem) {
+        const cols = grid[0].length;
+        const rows = grid.length;
+
+        for (let x = 0; x < cols; x++) {
+            for (let y = 0; y < rows; y++) {
+                if (grid[y][x] === null) {
+                    grid[y][x] = generateGem();
+                }
+            }
+        }
     }
 
     startNewGame() {
@@ -97,9 +96,9 @@ export class GameLogic {
         this.scene.randomCallCounter = 0; // Сбрасываем счетчик
         
         // Принудительно очищаем все overlay элементы СНАЧАЛА
-        this.scene.clearAllOverlays();
-        this.scene.hideGameOverWindow();
-        this.scene.hideWinWindow();
+        this.scene.uiManager.clearAllOverlays();
+        this.scene.uiManager.hideGameOverWindow();
+        this.scene.uiManager.hideWinWindow();
         
         // Удаляем предыдущий обработчик событий
         this.scene.input.off('pointerdown', this.scene.handleInput, this.scene);
@@ -124,11 +123,11 @@ export class GameLogic {
         // Добавляем обработчик событий
         this.scene.input.on('pointerdown', this.scene.handleInput, this.scene);
         
-        this.scene.updateMovesDisplay();
-        this.scene.updateObjectiveDisplay();
-        this.scene.updateProgressDisplay();
-        this.scene.updateStatus(`Игра начата. Сид: ${this.scene.currentSeed}, Random calls: ${this.scene.randomCallCounter}`);
-        this.scene.updateActionLog();
+        this.scene.uiManager.updateMovesDisplay();
+        this.scene.uiManager.updateObjectiveDisplay();
+        this.scene.uiManager.updateProgressDisplay();
+        this.scene.uiManager.updateStatus(`Игра начата. Сид: ${this.scene.currentSeed}, Random calls: ${this.scene.randomCallCounter}`);
+        this.scene.uiManager.updateActionLog();
     }
 
     update() {
@@ -142,7 +141,7 @@ export class GameLogic {
         this.scene.grid[to.y][to.x] = temp;
         
         // Проверяем, есть ли матчи
-        const matches = detectMatches(this.scene.grid);
+        const matches = this.detectMatches(this.scene.grid);
         
         // Возвращаем обмен обратно
         this.scene.grid[to.y][to.x] = this.scene.grid[from.y][from.x];
@@ -154,10 +153,67 @@ export class GameLogic {
     async makeMove(from, to) {
         // Уменьшаем количество ходов
         this.scene.movesLeft--;
-        this.scene.updateMovesDisplay();
+        this.scene.uiManager.updateMovesDisplay();
         
-        // Выполняем обмен и ждем завершения
-        await this.scene.swapElements(from, to, true);
+        // Сначала обновляем состояние сетки
+        const temp = this.scene.grid[from.y][from.x];
+        this.scene.grid[from.y][from.x] = this.scene.grid[to.y][to.x];
+        this.scene.grid[to.y][to.x] = temp;
+        
+        // Обновляем спрайты
+        const fromSprite = this.scene.sprites[from.y][from.x];
+        const toSprite = this.scene.sprites[to.y][to.x];
+        fromSprite.setTexture(`gem${this.scene.grid[from.y][from.x]}`);
+        toSprite.setTexture(`gem${this.scene.grid[to.y][to.x]}`);
+        
+        // Проверяем матчи
+        const matches = this.detectMatches(this.scene.grid);
+        if (matches.length > 0) {
+            // Анимируем обмен
+            await this.scene.animationManager.animateSwap(from, to);
+            
+            // Анимируем удаление матчей
+            await this.scene.animationManager.animateMatches(matches);
+            
+            // Удаляем матчи из сетки
+            this.removeMatches(this.scene.grid, matches);
+            
+            // Обновляем счетчик собранных камней
+            matches.forEach(match => {
+                this.scene.collectedGems[match.type] = (this.scene.collectedGems[match.type] || 0) + match.positions.length;
+            });
+            
+            // Применяем гравитацию
+            this.applyGravity(this.scene.grid);
+            await this.scene.animationManager.animateGravity();
+            
+            // Создаем новые элементы
+            this.spawnNewElements(this.scene.grid, () => this.scene.generateGemWithModifier('new-element'));
+            await this.scene.animationManager.animateNewElements();
+            
+            // Обновляем отображение
+            this.scene.renderGrid();
+            this.scene.uiManager.updateProgressDisplay();
+            
+            // Проверяем условие победы
+            this.checkWinCondition();
+        } else {
+            // Если нет матчей, возвращаем состояние сетки
+            this.scene.grid[to.y][to.x] = this.scene.grid[from.y][from.x];
+            this.scene.grid[from.y][from.x] = temp;
+            
+            // Возвращаем спрайты в исходное состояние
+            fromSprite.setTexture(`gem${this.scene.grid[from.y][from.x]}`);
+            toSprite.setTexture(`gem${this.scene.grid[to.y][to.x]}`);
+            
+            // Анимируем обмен и возврат
+            await this.scene.animationManager.animateSwap(from, to);
+            await this.scene.animationManager.animateSwap(from, to);
+            
+            // Возвращаем ход
+            this.scene.movesLeft++;
+            this.scene.uiManager.updateMovesDisplay();
+        }
         
         // Проверяем, закончились ли ходы
         if (this.scene.movesLeft <= 0 && !this.scene.gameOver) {
@@ -227,14 +283,14 @@ export class GameLogic {
 
     triggerGameOver() {
         this.scene.gameOver = true;
-        this.scene.showGameOverWindow();
-        this.scene.updateStatus('Игра окончена - ходы закончились!');
+        this.scene.uiManager.showGameOverWindow();
+        this.scene.uiManager.updateStatus('Игра окончена - ходы закончились!');
     }
 
     triggerWin() {
         this.scene.gameOver = true;
-        this.scene.showWinWindow();
-        this.scene.updateStatus('Поздравляем! Задание выполнено!');
+        this.scene.uiManager.showWinWindow();
+        this.scene.uiManager.updateStatus('Поздравляем! Задание выполнено!');
     }
 
     logAction(action) {
@@ -252,8 +308,10 @@ export class GameLogic {
         };
         
         this.scene.actionLog.push(logEntry);
-        this.scene.updateActionLog();
+        this.scene.uiManager.updateActionLog();
         
         console.log('Действие записано:', logEntry);
     }
-} 
+}
+
+export default GameLogic; 

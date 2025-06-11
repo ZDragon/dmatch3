@@ -37,21 +37,25 @@ export class AnimationManager {
     }
 
     async animateMatches(matches) {
-        const animations = matches.flat().map(match => {
-            const sprite = this.scene.sprites[match.y][match.x];
-            if (!sprite) return null;
-            
-            return new Promise(resolve => {
-                this.scene.tweens.add({
-                    targets: sprite,
-                    alpha: 0,
-                    scale: 0.5,
-                    duration: 300,
-                    ease: 'Power2',
-                    onComplete: resolve
-                });
+        const animations = [];
+        
+        matches.forEach(match => {
+            match.positions.forEach(pos => {
+                const sprite = this.scene.sprites[pos.y][pos.x];
+                if (!sprite) return;
+                
+                animations.push(new Promise(resolve => {
+                    this.scene.tweens.add({
+                        targets: sprite,
+                        alpha: 0,
+                        scale: 0.5,
+                        duration: 300,
+                        ease: 'Power2',
+                        onComplete: resolve
+                    });
+                }));
             });
-        }).filter(Boolean);
+        });
         
         await Promise.all(animations);
     }
@@ -64,7 +68,7 @@ export class AnimationManager {
                 const sprite = this.scene.sprites[y][x];
                 if (!sprite) continue;
                 
-                const targetY = y * this.scene.TILE_SIZE;
+                const targetY = y * (this.scene.elementHeight + this.scene.elementSpacing) + this.scene.elementHeight / 2;
                 if (sprite.y !== targetY) {
                     animations.push(new Promise(resolve => {
                         this.scene.tweens.add({

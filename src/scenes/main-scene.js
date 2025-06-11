@@ -60,9 +60,9 @@ export class MainScene extends Phaser.Scene {
         this.cameras.main.setBackgroundColor('#ffffff');
         this.createUI();
         
-        // Проверяем, есть ли миссия от карты
+        // Проверяем, есть ли миссия
         if (this.scene.settings.data.mission) {
-            this.startMission(this.scene.settings.data);
+            this.startMission(this.scene.settings.data.mission);
         } else if (this.scene.settings.data.savedState) {
             this.loadSavedState(this.scene.settings.data.savedState);
         } else {
@@ -84,21 +84,9 @@ export class MainScene extends Phaser.Scene {
             0xffffff
         ).setStrokeStyle(1, 0xcccccc);
         
-        // Поле ввода сида
-        this.add.text(uiX, uiY, 'Seed:', { fontSize: '14px', fill: '#000' });
-        this.seedInput = this.uiManager.createInputField(uiX, uiY + 20, 80, 20, this.currentSeed.toString());
+        // Кнопки навигации вверху
+        this.createNavigationButtons(uiX, uiY - 40);
         
-        // Модификатор гемов
-        this.add.text(uiX, uiY - 30, 'Gem Modifier:', { fontSize: '14px', fill: '#000' });
-        
-        // Поле выбора типа гема
-        this.add.text(uiX, uiY - 10, 'Тип (1-5):', { fontSize: '12px', fill: '#000' });
-        this.gemTypeInput = this.uiManager.createInputField(uiX + 65, uiY - 15, 30, 20, this.gemModifier.targetGemType.toString());
-        
-        // Поле множителя
-        this.add.text(uiX + 105, uiY - 10, 'x:', { fontSize: '12px', fill: '#000' });
-        this.gemMultiplierInput = this.uiManager.createInputField(uiX + 120, uiY - 15, 40, 20, this.gemModifier.multiplier.toString());
-
         // Счетчик ходов
         this.movesText = this.add.text(uiX, uiY + 50, `Ходы: ${this.movesLeft}`, { 
             fontSize: '16px', 
@@ -123,23 +111,12 @@ export class MainScene extends Phaser.Scene {
         
         // Кнопка "Новая игра"
         this.uiManager.createButton(uiX, uiY + 160, 100, 25, 'Новая игра', () => {
-            this.currentSeed = parseInt(this.seedInput.value) || 12345;
-            this.updateGemModifier();
             this.startNewGame();
         });
         
-        // Кнопка "Экспорт лога"
-        this.uiManager.createButton(uiX, uiY + 195, 100, 25, 'Экспорт лога', () => {
-            this.exportActionLog();
-        });
-        
-        // Поле загрузки лога
-        this.add.text(uiX, uiY + 230, 'Импорт лога:', { fontSize: '12px', fill: '#000' });
-        this.logInput = this.uiManager.createInputField(uiX, uiY + 250, 140, 40, 'Вставьте лог...');
-        
-        // Кнопка "Импорт и реплей"
-        this.uiManager.createButton(uiX, uiY + 300, 100, 25, 'Реплей', () => {
-            this.replayManager.importAndReplay();
+        // Кнопка админ-панели
+        this.uiManager.createButton(uiX, uiY + 195, 100, 25, 'Админ', () => {
+            this.scene.launch('AdminPanelScene');
         });
         
         // Текст статуса
@@ -155,6 +132,50 @@ export class MainScene extends Phaser.Scene {
             fill: '#333',
             wordWrap: { width: 140 }
         });
+
+        // Отображение текущих настроек
+        this.settingsText = this.add.text(uiX, uiY + 450, '', {
+            fontSize: '10px',
+            fill: '#666',
+            wordWrap: { width: 140 }
+        });
+        this.updateSettingsDisplay();
+    }
+
+    createNavigationButtons(x, y) {
+        // Кнопка возврата к замку
+        const backButton = this.add.rectangle(x, y, 100, 30, 0x4CAF50)
+            .setInteractive({ useHandCursor: true })
+            .on('pointerdown', () => {
+                if (this.missionData) {
+                    // Если мы на миссии с карты, возвращаемся на карту
+                    this.scene.start('MapScene');
+                } else {
+                    // Иначе возвращаемся в меню
+                    this.scene.start('MenuScene');
+                }
+            })
+            .on('pointerover', () => backButton.setFillStyle(0x66BB6A))
+            .on('pointerout', () => backButton.setFillStyle(0x4CAF50));
+
+        const backText = this.add.text(x, y, '← Назад', {
+            fontSize: '14px',
+            fill: '#ffffff'
+        }).setOrigin(0.5);
+
+        // Кнопка меню
+        const menuButton = this.add.rectangle(x + 110, y, 100, 30, 0x2196F3)
+            .setInteractive({ useHandCursor: true })
+            .on('pointerdown', () => {
+                this.scene.start('MenuScene');
+            })
+            .on('pointerover', () => menuButton.setFillStyle(0x42A5F5))
+            .on('pointerout', () => menuButton.setFillStyle(0x2196F3));
+
+        const menuText = this.add.text(x + 110, y, 'Меню', {
+            fontSize: '14px',
+            fill: '#ffffff'
+        }).setOrigin(0.5);
     }
 
     updateGemModifier() {
@@ -188,7 +209,7 @@ export class MainScene extends Phaser.Scene {
         this.movesLeft = MAX_MOVES;
         this.gameOver = false;
         this.collectedGems = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-        this.randomCallCounter = 0; // Сбрасываем счетчик
+        this.randomCallCounter = 0;
         
         // Принудительно очищаем все overlay элементы СНАЧАЛА
         this.clearAllOverlays();
@@ -199,20 +220,17 @@ export class MainScene extends Phaser.Scene {
         this.input.off('pointerdown', this.handleInput, this);
         
         // КРИТИЧЕСКИ ВАЖНЫЙ ПОРЯДОК:
-        // 1. Обновляем модификатор (НЕ использует getRandom)
-        this.updateGemModifier();
-        
-        // 2. Устанавливаем сид
+        // 1. Устанавливаем сид
         this.gameLogic.setSeed(this.currentSeed);
         console.log(`Сид установлен: ${this.currentSeed}, модификатор: тип ${this.gemModifier.targetGemType} x${this.gemModifier.multiplier}`);
         
-        // 3. Генерируем задание (использует getRandom 2 раза)
+        // 2. Генерируем задание (использует getRandom 2 раза)
         this.generateObjective();
         
-        // 4. Создаем сетку БЕЗ обработки матчей
+        // 3. Создаем сетку БЕЗ обработки матчей
         this.grid = this.createInitialGridDeterministic();
         
-        // 5. Рендерим сетку
+        // 4. Рендерим сетку
         this.renderGrid();
         
         // Добавляем обработчик событий
@@ -221,6 +239,7 @@ export class MainScene extends Phaser.Scene {
         this.updateMovesDisplay();
         this.updateObjectiveDisplay();
         this.updateProgressDisplay();
+        this.updateSettingsDisplay();
         this.updateStatus(`Игра начата. Сид: ${this.currentSeed}, Random calls: ${this.randomCallCounter}`);
         this.updateActionLog();
     }
@@ -1320,26 +1339,63 @@ export class MainScene extends Phaser.Scene {
         this.updateStatus('Игра сохранена');
     }
 
+    shutdown() {
+        // Очищаем все текстовые поля
+        if (this.movesText) {
+            this.movesText.destroy();
+            this.movesText = null;
+        }
+        if (this.objectiveText) {
+            this.objectiveText.destroy();
+            this.objectiveText = null;
+        }
+        if (this.progressText) {
+            this.progressText.destroy();
+            this.progressText = null;
+        }
+        if (this.statusText) {
+            this.statusText.destroy();
+            this.statusText = null;
+        }
+        if (this.logText) {
+            this.logText.destroy();
+            this.logText = null;
+        }
+
+        // Очищаем все спрайты
+        if (this.sprites) {
+            this.sprites.forEach(row => {
+                row.forEach(sprite => {
+                    if (sprite) {
+                        sprite.destroy();
+                    }
+                });
+            });
+            this.sprites = [];
+        }
+
+        // Очищаем все оверлеи
+        this.clearAllOverlays();
+    }
+
     startMission(data) {
-        const { mission, zoneId, zoneData, currentLevel, isResourceMission } = data;
-        
-        // Устанавливаем параметры миссии
         this.missionData = {
-            zoneId,
-            zoneData,
-            currentLevel,
-            isResourceMission
+            zoneId: data.zoneId,
+            zoneData: data.zoneData,
+            currentLevel: data.currentLevel,
+            isResourceMission: data.isResourceMission
         };
-        
-        // Устанавливаем цель и количество ходов
+
+        // Устанавливаем параметры миссии
         this.objective = {
-            gemType: mission.gemType,
-            amount: mission.amount,
-            description: `Собрать ${mission.amount} ${this.getGemColorName(mission.gemType)} камней`
+            type: data.zoneData.missions[data.currentLevel].type,
+            amount: data.zoneData.missions[data.currentLevel].amount,
+            gemType: data.zoneData.missions[data.currentLevel].gemType
         };
-        
-        this.movesLeft = mission.moves;
-        
+
+        // Устанавливаем лимит ходов для миссии
+        this.movesLeft = data.zoneData.missions[data.currentLevel].moves;
+
         // Инициализируем игру
         this.startNewGame();
     }
@@ -1347,6 +1403,20 @@ export class MainScene extends Phaser.Scene {
     getGemColorName(gemType) {
         const colors = ['красных', 'синих', 'зеленых', 'желтых', 'фиолетовых'];
         return colors[gemType - 1] || 'неизвестных';
+    }
+
+    updateSettingsDisplay() {
+        if (this.settingsText) {
+            const missionInfo = this.missionData ? 
+                `\nМиссия: ${this.missionData.zoneId} (уровень ${this.missionData.currentLevel})` : '';
+            
+            this.settingsText.setText(
+                `Настройки:\n` +
+                `Seed: ${this.currentSeed}\n` +
+                `Модификатор: тип ${this.gemModifier.targetGemType} x${this.gemModifier.multiplier}` +
+                missionInfo
+            );
+        }
     }
 }
 

@@ -180,27 +180,30 @@ export class MapScene extends Phaser.Scene {
     startMission(zoneId, zoneData, currentLevel) {
         if (currentLevel < 3) {
             // Запускаем миссию для повышения уровня
-            const mission = zoneData.levels[currentLevel].mission;
-            this.scene.start('MainScene', {
-                mission,
+            const missionData = {
                 zoneId,
-                zoneData,
-                currentLevel
-            });
+                zoneData: {
+                    missions: [zoneData.levels[currentLevel].mission]
+                },
+                currentLevel: 0,
+                isResourceMission: false
+            };
+            this.scene.start('MainScene', { mission: missionData });
         } else {
             // Запускаем миссию для сбора ресурсов
-            const mission = {
-                gemType: 1, // Используем любой тип гема
-                amount: 20,
-                moves: 25
-            };
-            this.scene.start('MainScene', {
-                mission,
+            const missionData = {
                 zoneId,
-                zoneData,
-                currentLevel,
+                zoneData: {
+                    missions: [{
+                        gemType: 1, // Используем любой тип гема
+                        amount: 20,
+                        moves: 25
+                    }]
+                },
+                currentLevel: 0,
                 isResourceMission: true
-            });
+            };
+            this.scene.start('MainScene', { mission: missionData });
         }
     }
 

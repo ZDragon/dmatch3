@@ -6,43 +6,32 @@ export class MenuScene extends Phaser.Scene {
     }
 
     create() {
-        const width = this.cameras.main.width;
-        const height = this.cameras.main.height;
-        
-        // Фон
-        this.add.rectangle(width / 2, height / 2, width, height, 0x000000);
-        
-        // Заголовок
-        this.add.text(width / 2, height / 4, 'MATCH-3', {
-            fontSize: '64px',
-            fontFamily: 'Arial',
-            color: '#ffffff',
-            fontStyle: 'bold'
+        // Добавляем фон
+        this.add.rectangle(0, 0, this.cameras.main.width, this.cameras.main.height, 0x000000)
+            .setOrigin(0, 0);
+
+        // Добавляем заголовок
+        this.add.text(this.cameras.main.width / 2, 100, 'MATCH-3', {
+            fontSize: '48px',
+            fill: '#ffffff'
         }).setOrigin(0.5);
-        
+
         // Создаем кнопки
-        this.createButton(width / 2, height / 2, 'Новая игра', () => {
-            this.sound.play('click');
-            this.scene.start('MainScene');
+        this.createButton(this.cameras.main.width / 2, 200, 'Новая игра', () => {
+            this.scene.start('MapScene');
         });
-        
-        this.createButton(width / 2, height / 2 + 80, 'Продолжить', () => {
-            this.sound.play('click');
+
+        this.createButton(this.cameras.main.width / 2, 280, 'Продолжить', () => {
             this.loadGameState();
         });
-        
-        this.createButton(width / 2, height / 2 + 160, 'Настройки', () => {
-            this.sound.play('click');
+
+        this.createButton(this.cameras.main.width / 2, 360, 'Настройки', () => {
             this.showSettings();
         });
-        
+
         // Запускаем фоновую музыку
         if (!this.sound.get('background-music')) {
-            const music = this.sound.add('background-music', {
-                volume: 0.5,
-                loop: true
-            });
-            music.play();
+            this.sound.add('background-music', { volume: 0.5, loop: true }).play();
         }
     }
     

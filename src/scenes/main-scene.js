@@ -60,8 +60,10 @@ export class MainScene extends Phaser.Scene {
         this.cameras.main.setBackgroundColor('#ffffff');
         this.createUI();
         
-        // Проверяем, есть ли сохраненное состояние
-        if (this.scene.settings.data.savedState) {
+        // Проверяем, есть ли миссия от карты
+        if (this.scene.settings.data.mission) {
+            this.startMission(this.scene.settings.data);
+        } else if (this.scene.settings.data.savedState) {
             this.loadSavedState(this.scene.settings.data.savedState);
         } else {
             this.startNewGame();
@@ -1143,8 +1145,20 @@ export class MainScene extends Phaser.Scene {
 
     triggerWin() {
         this.gameOver = true;
-        this.showWinWindow();
-        this.updateStatus('Поздравляем! Задание выполнено!');
+        
+        // Если это миссия с карты, обновляем уровень зоны
+        if (this.missionData) {
+            this.scene.start('MapScene');
+            this.scene.get('MapScene').updateZoneLevel(
+                this.missionData.zoneId,
+                this.missionData.zoneData,
+                this.missionData.currentLevel,
+                true
+            );
+        } else {
+            this.showWinWindow();
+            this.updateStatus('Поздравляем! Задание выполнено!');
+        }
     }
 
     showWinWindow() {
@@ -1304,6 +1318,35 @@ export class MainScene extends Phaser.Scene {
         
         localStorage.setItem('match3-save', JSON.stringify(state));
         this.updateStatus('Игра сохранена');
+    }
+
+    startMission(data) {
+        const { mission, zoneId, zoneData, currentLevel, isResourceMission } = data;
+        
+        // Устанавливаем параметры миссии
+        this.missionData = {
+            zoneId,
+            zoneData,
+            currentLevel,
+            isResourceMission
+        };
+        
+        // Устанавливаем цель и количество ходов
+        this.objective = {
+            gemType: mission.gemType,
+            amount: mission.amount,
+            description: `Собрать ${mission.amount} ${this.getGemColorName(mission.gemType)} камней`
+        };
+        
+        this.movesLeft = mission.moves;
+        
+        // Инициализируем игру
+        this.startNewGame();
+    }
+
+    getGemColorName(gemType) {
+        const colors = ['красных', 'синих', 'зеленых', 'желтых', 'фиолетовых'];
+        return colors[gemType - 1] || 'неизвестных';
     }
 }
 

@@ -54,6 +54,16 @@ export class MainScene extends Phaser.Scene {
             graphics.generateTexture(`gem${index + 1}`, gemSize, gemSize);
             graphics.destroy();
         });
+        // Активный гем (бомба)
+        const bombGraphics = this.add.graphics();
+        bombGraphics.fillStyle(0x222222);
+        bombGraphics.fillCircle(gemSize/2, gemSize/2, gemSize/2-2);
+        bombGraphics.lineStyle(4, 0xffd700);
+        bombGraphics.strokeCircle(gemSize/2, gemSize/2, gemSize/2-6);
+        bombGraphics.fillStyle(0xff0000);
+        bombGraphics.fillCircle(gemSize/2, gemSize/2, 10);
+        bombGraphics.generateTexture('gem6', gemSize, gemSize);
+        bombGraphics.destroy();
     }
 
     create() {
@@ -433,10 +443,16 @@ export class MainScene extends Phaser.Scene {
                     `gem${gemType}`
                 );
                 sprite.setDisplaySize(gemSize, gemSize);
-                sprite.setInteractive({ useHandCursor: true }); // добавляем курсор для интерактивности
-                sprite.setDepth(1); // устанавливаем низкий depth для игровых элементов
+                sprite.setInteractive({ useHandCursor: true });
+                sprite.setDepth(1);
                 sprite.gridX = x;
                 sprite.gridY = y;
+                // --- ДОБАВЛЯЕМ: обработка клика по активному гемy ---
+                if (gemType === 6) {
+                    sprite.on('pointerdown', () => {
+                        this.explodeBomb(x, y);
+                    });
+                }
                 row.push(sprite);
             }
             this.sprites.push(row);
@@ -826,20 +842,39 @@ export class MainScene extends Phaser.Scene {
         let foundMatches = true;
         let cascadeCount = 0;
         let totalCollected = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-        
+        let bombToActivate = [];
         while (foundMatches && cascadeCount < 20) {
             const matches = this.detectMatchesDeterministic(this.grid);
-            
+            // --- Сохраняем позиции для спец-гемов (матчи из 5) ---
+            const bombPositions = [];
+            matches.forEach(match => {
+                if (Array.isArray(match) && match.length === 5) {
+                    const {x, y} = match[0];
+                    bombPositions.push({x, y});
+                }
+            });
+            // Проверяем, есть ли активные гемы рядом с матчами (автоактивация)
+            matches.forEach(match => {
+                if (Array.isArray(match)) {
+                    match.forEach(({x, y}) => {
+                        this.getNeighbors(x, y).forEach(({nx, ny}) => {
+                            if (this.grid[ny] && this.grid[ny][nx] === 6) {
+                                bombToActivate.push({x: nx, y: ny});
+                            }
+                        });
+                    });
+                }
+            });
+            bombToActivate = bombToActivate.filter((pos, idx, arr) => arr.findIndex(p => p.x === pos.x && p.y === pos.y) === idx);
+            // Активируем все найденные бомбы (если нужно)
+            //for (const pos of bombToActivate) {
+            //    await this.explodeBomb(pos.x, pos.y);
+            //}
+            bombToActivate = [];
             if (matches && matches.length > 0) {
                 console.log(`Каскад #${cascadeCount + 1}: найдено ${matches.length} матчей`);
-                
-                // Воспроизводим звук совпадения
                 this.sound.play('match', { volume: 0.5 });
-                
-                // Анимируем найденные матчи
                 await this.animateMatches(matches);
-                
-                // Подсчитываем собранные камни
                 matches.forEach((match, matchIndex) => {
                     if (Array.isArray(match)) {
                         match.forEach(({ x, y }) => {
@@ -852,41 +887,31 @@ export class MainScene extends Phaser.Scene {
                         });
                     }
                 });
-                
                 // Удаляем матчи
                 this.gameLogic.removeMatches(this.grid, matches);
-                
-                // Анимируем падение элементов
+                // --- Теперь ставим спец-гемы на пустые места после удаления ---
+                bombPositions.forEach(({x, y}) => {
+                    if (this.grid[y][x] === 0) {
+                        this.grid[y][x] = 6;
+                    }
+                });
                 await this.animateGravity();
-                
-                // Применяем гравитацию
                 this.gameLogic.applyGravity(this.grid);
-                
-                // Заполняем новыми элементами
                 this.customSpawnNewElements(this.grid, cascadeCount);
-                
-                // Анимируем появление новых элементов
                 await this.animateNewElements();
-                
                 cascadeCount++;
-                
-                // Небольшая пауза между каскадами
                 await this.delay(300);
             } else {
                 foundMatches = false;
             }
         }
-        
-        // Обновляем счетчики
         Object.keys(totalCollected).forEach(gemType => {
             if (totalCollected[gemType] > 0) {
                 this.collectedGems[gemType] = (this.collectedGems[gemType] || 0) + totalCollected[gemType];
             }
         });
-        
         this.updateProgressDisplay();
         this.checkWinCondition();
-        
         console.log(`Обработано каскадов: ${cascadeCount}, Random calls: ${this.randomCallCounter}`);
     }
 
@@ -1053,7 +1078,14 @@ export class MainScene extends Phaser.Scene {
                         sprite.setDepth(1);
                         sprite.setScale(0); // начинаем с нулевого размера
                         sprite.setAlpha(0); // и прозрачности
-                        
+                        sprite.gridX = col;
+                        sprite.gridY = row;
+                        // --- ДОБАВЛЯЕМ: обработка клика по активному гемy ---
+                        if (gemType === 6) {
+                            sprite.on('pointerdown', () => {
+                                this.explodeBomb(col, row);
+                            });
+                        }
                         this.sprites[row][col] = sprite;
                         newSprites.push({ sprite, targetY: row * (elementHeight + elementSpacing) + elementHeight / 2 });
                     }
@@ -1176,20 +1208,8 @@ export class MainScene extends Phaser.Scene {
     triggerWin() {
         this.gameOver = true;
         
-        // Если это миссия с карты, обновляем уровень зоны
-        if (this.missionData) {
-            this.scene.start('MapScene');
-            this.scene.get('MapScene').updateZoneLevel(
-                this.missionData.zoneId,
-                this.missionData.zoneData,
-                this.missionData.currentLevel,
-                true,
-                this.missionData.zoneData.missions[this.missionData.currentLevel].amount
-            );
-        } else {
-            this.showWinWindow();
-            this.updateStatus('Поздравляем! Задание выполнено!');
-        }
+        this.showWinWindow();
+        this.updateStatus('Поздравляем! Задание выполнено!');
     }
 
     showWinWindow() {
@@ -1258,7 +1278,8 @@ export class MainScene extends Phaser.Scene {
                         this.missionData.zoneData,
                         this.missionData.currentLevel,
                         true,
-                        reward
+                        reward,
+                        this.missionData.isResourceMission
                     );
                 }
                 this.saveGameState();
@@ -1426,15 +1447,20 @@ export class MainScene extends Phaser.Scene {
             isResourceMission: data.isResourceMission
         };
 
+        // Корректно выбираем миссию для обычной и ресурсной
+        const mission = data.isResourceMission
+            ? data.zoneData.missions[0]
+            : data.zoneData.missions[data.currentLevel];
+
         // Устанавливаем параметры миссии
         this.objective = {
-            type: data.zoneData.missions[data.currentLevel].type,
-            amount: data.zoneData.missions[data.currentLevel].amount,
-            gemType: data.zoneData.missions[data.currentLevel].gemType
+            type: mission.type,
+            amount: mission.amount,
+            gemType: mission.gemType
         };
 
-        // Устанавливаем лимит ходов для миссии
-        this.movesLeft = data.zoneData.missions[data.currentLevel].moves;
+        this.currentSeed = mission.seed;
+        this.movesLeft = mission.moves;
 
         // Инициализируем игру
         this.startNewGame();
@@ -1457,6 +1483,69 @@ export class MainScene extends Phaser.Scene {
                 missionInfo
             );
         }
+    }
+
+    // Вспомогательная функция: соседи клетки
+    getNeighbors(x, y) {
+        const dirs = [
+            {dx: -1, dy: 0}, {dx: 1, dy: 0},
+            {dx: 0, dy: -1}, {dx: 0, dy: 1},
+            {dx: -1, dy: -1}, {dx: 1, dy: -1},
+            {dx: -1, dy: 1}, {dx: 1, dy: 1}
+        ];
+        const res = [];
+        for (const d of dirs) {
+            const nx = x + d.dx;
+            const ny = y + d.dy;
+            if (nx >= 0 && nx < GRID_WIDTH && ny >= 0 && ny < GRID_HEIGHT) {
+                res.push({nx, ny});
+            }
+        }
+        return res;
+    }
+    // Взрыв активного гема: уничтожает все смежные гемы
+    async explodeBomb(x, y) {
+        if (this.grid[y][x] !== 6) return;
+        // Визуальный эффект
+        if (this.sprites[y][x]) {
+            this.tweens.add({
+                targets: this.sprites[y][x],
+                scaleX: 1.5,
+                scaleY: 1.5,
+                alpha: 0,
+                duration: 250,
+                ease: 'Back.easeIn',
+                onComplete: () => {
+                    if (this.sprites[y][x]) this.sprites[y][x].destroy();
+                }
+            });
+        }
+        // Удаляем саму бомбу
+        this.grid[y][x] = 0;
+        // Удаляем все смежные гемы
+        for (const {nx, ny} of this.getNeighbors(x, y)) {
+            if (this.grid[ny][nx] > 0 && this.grid[ny][nx] <= 6) {
+                if (this.sprites[ny][nx]) {
+                    this.tweens.add({
+                        targets: this.sprites[ny][nx],
+                        scaleX: 0,
+                        scaleY: 0,
+                        alpha: 0,
+                        duration: 200,
+                        ease: 'Back.easeIn',
+                        onComplete: () => {
+                            if (this.sprites[ny][nx]) this.sprites[ny][nx].destroy();
+                        }
+                    });
+                }
+                this.grid[ny][nx] = 0;
+            }
+        }
+        // После взрыва — применяем гравитацию и спавним новые элементы
+        await this.animateGravity();
+        this.gameLogic.applyGravity(this.grid);
+        this.customSpawnNewElements(this.grid, 0);
+        await this.animateNewElements();
     }
 }
 

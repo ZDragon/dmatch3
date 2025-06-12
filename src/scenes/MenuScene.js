@@ -18,6 +18,9 @@ export class MenuScene extends Phaser.Scene {
 
         // Создаем кнопки
         this.createButton(this.cameras.main.width / 2, 200, 'Новая игра', () => {
+            // Сброс прогресса: удаляем сохранения карты и основной игры
+            localStorage.removeItem('map-state');
+            localStorage.removeItem('match3-save');
             this.scene.start('MapScene');
         });
 
@@ -55,7 +58,7 @@ export class MenuScene extends Phaser.Scene {
         if (savedState) {
             try {
                 const state = JSON.parse(savedState);
-                this.scene.start('MainScene', { savedState: state });
+                this.scene.start('MapScene', { savedState: state });
             } catch (e) {
                 console.error('Ошибка загрузки сохранения:', e);
                 this.showError('Ошибка загрузки сохранения');

@@ -5,30 +5,30 @@ const ZONE_TYPES = {
     MILL: {
         name: 'Мельница',
         levels: [
-            { image: 'mill-ruins', mission: { gemType: 3, amount: 15, moves: 20 } },
-            { image: 'mill-construction1', mission: { gemType: 3, amount: 20, moves: 25 } },
-            { image: 'mill-construction2', mission: { gemType: 3, amount: 25, moves: 30 } },
-            { image: 'mill-complete', mission: { gemType: 3, amount: 30, moves: 35 } }
+            { image: 'mill-ruins', mission: { seed: 16765, gemType: 3, amount: 15, moves: 20 } },
+            { image: 'mill-construction1', mission: { seed: 19873, gemType: 3, amount: 20, moves: 25 } },
+            { image: 'mill-construction2', mission: { seed: 23456, gemType: 3, amount: 25, moves: 30 } },
+            { image: 'mill-complete', mission: { seed: 26543, gemType: 3, amount: 30, moves: 35 } }
         ],
         resource: 'мука'
     },
     MINE: {
         name: 'Шахта',
         levels: [
-            { image: 'mine-ruins', mission: { gemType: 4, amount: 15, moves: 20 } },
-            { image: 'mine-construction1', mission: { gemType: 4, amount: 20, moves: 25 } },
-            { image: 'mine-construction2', mission: { gemType: 4, amount: 25, moves: 30 } },
-            { image: 'mine-complete', mission: { gemType: 4, amount: 30, moves: 35 } }
+            { image: 'mine-ruins', mission: { seed: 34567, gemType: 4, amount: 15, moves: 20 } },
+            { image: 'mine-construction1', mission: { seed: 37654, gemType: 4, amount: 20, moves: 25 } },
+            { image: 'mine-construction2', mission: { seed: 40543, gemType: 4, amount: 25, moves: 30 } },
+            { image: 'mine-complete', mission: { seed: 43432, gemType: 4, amount: 30, moves: 35 } }
         ],
         resource: 'руда'
     },
     FARM: {
         name: 'Ферма',
         levels: [
-            { image: 'farm-ruins', mission: { gemType: 2, amount: 15, moves: 20 } },
-            { image: 'farm-construction1', mission: { gemType: 2, amount: 20, moves: 25 } },
-            { image: 'farm-construction2', mission: { gemType: 2, amount: 25, moves: 30 } },
-            { image: 'farm-complete', mission: { gemType: 2, amount: 30, moves: 35 } }
+            { image: 'farm-ruins', mission: { seed: 56789, gemType: 2, amount: 15, moves: 20 } },
+            { image: 'farm-construction1', mission: { seed: 59678, gemType: 2, amount: 20, moves: 25 } },
+            { image: 'farm-construction2', mission: { seed: 62567, gemType: 2, amount: 25, moves: 30 } },
+            { image: 'farm-complete', mission: { seed: 65456, gemType: 2, amount: 30, moves: 35 } }
         ],
         resource: 'зерно'
     }
@@ -183,9 +183,9 @@ export class MapScene extends Phaser.Scene {
             const missionData = {
                 zoneId,
                 zoneData: {
-                    missions: [zoneData.levels[currentLevel].mission]
+                    missions: zoneData.levels.map(l => l.mission)
                 },
-                currentLevel: 0,
+                currentLevel: currentLevel,
                 isResourceMission: false
             };
             this.scene.start('MainScene', { mission: missionData });
@@ -195,33 +195,36 @@ export class MapScene extends Phaser.Scene {
                 zoneId,
                 zoneData: {
                     missions: [{
+                        type: 'resource',
+                        seed: Math.floor(Math.random() * 100000),
                         gemType: 1, // Используем любой тип гема
                         amount: 20,
                         moves: 25
                     }]
                 },
-                currentLevel: 0,
+                currentLevel: currentLevel,
                 isResourceMission: true
             };
             this.scene.start('MainScene', { mission: missionData });
         }
     }
 
-    updateZoneLevel(zoneId, zoneData, currentLevel, missionCompleted) {
+    updateZoneLevel(zoneId, zoneData, currentLevel, missionCompleted, reward, isResourceMission) {
         if (missionCompleted) {
-            if (currentLevel < 3) {
+            // Получаем актуальный уровень зоны
+            const actualLevel = this.zones[zoneId]?.level || 0;
+            if (isResourceMission) {
+                // Только увеличиваем ресурсы, уровень не трогаем
+                this.resources[zoneId] = (this.resources[zoneId] || 0) + (reward || 1);
+            } else if (actualLevel < 3) {
+                this.resources[zoneId] = (this.resources[zoneId] || 0) + (reward || 1);
                 // Повышаем уровень
                 this.zones[zoneId] = {
-                    level: currentLevel + 1
+                    level: actualLevel + 1
                 };
-            } else {
-                // Увеличиваем количество ресурсов
-                this.resources[zoneId] = (this.resources[zoneId] || 0) + 1;
             }
-            
             // Сохраняем состояние
             this.saveState();
-            
             // Перезапускаем сцену для обновления отображения
             this.scene.restart();
         }

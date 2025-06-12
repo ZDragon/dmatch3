@@ -210,32 +210,29 @@ export class MainScene extends Phaser.Scene {
         this.gameOver = false;
         this.collectedGems = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
         this.randomCallCounter = 0;
-        
-        // Принудительно очищаем все overlay элементы СНАЧАЛА
         this.clearAllOverlays();
         this.hideGameOverWindow();
         this.hideWinWindow();
-        
-        // Удаляем предыдущий обработчик событий
         this.input.off('pointerdown', this.handleInput, this);
-        
-        // КРИТИЧЕСКИ ВАЖНЫЙ ПОРЯДОК:
-        // 1. Устанавливаем сид
         this.gameLogic.setSeed(this.currentSeed);
         console.log(`Сид установлен: ${this.currentSeed}, модификатор: тип ${this.gemModifier.targetGemType} x${this.gemModifier.multiplier}`);
-        
-        // 2. Генерируем задание (использует getRandom 2 раза)
-        this.generateObjective();
-        
-        // 3. Создаем сетку БЕЗ обработки матчей
+
+        // --- Используем миссию, если она есть ---
+        if (this.missionData) {
+            const mission = this.missionData.zoneData.missions[this.missionData.currentLevel];
+            this.objective = {
+                gemType: mission.gemType,
+                amount: mission.amount,
+                description: `Собрать ${mission.amount} ${this.getGemColorName(mission.gemType)} камней`
+            };
+            this.movesLeft = mission.moves;
+        } else {
+            this.generateObjective();
+        }
+
         this.grid = this.createInitialGridDeterministic();
-        
-        // 4. Рендерим сетку
         this.renderGrid();
-        
-        // Добавляем обработчик событий
         this.input.on('pointerdown', this.handleInput, this);
-        
         this.updateMovesDisplay();
         this.updateObjectiveDisplay();
         this.updateProgressDisplay();
@@ -563,10 +560,7 @@ export class MainScene extends Phaser.Scene {
     }
 
     showGameOverWindow() {
-        // Массив для хранения всех элементов окна
         this.gameOverElements = [];
-        
-        // Создаем полупрозрачный фон
         this.gameOverOverlay = this.add.rectangle(
             this.cameras.main.centerX,
             this.cameras.main.centerY,
@@ -576,8 +570,6 @@ export class MainScene extends Phaser.Scene {
             0.7
         ).setDepth(100);
         this.gameOverElements.push(this.gameOverOverlay);
-
-        // Создаем окно проигрыша
         this.gameOverWindow = this.add.rectangle(
             this.cameras.main.centerX,
             this.cameras.main.centerY,
@@ -586,12 +578,10 @@ export class MainScene extends Phaser.Scene {
             0xffffff
         ).setStrokeStyle(3, 0xff0000).setDepth(101);
         this.gameOverElements.push(this.gameOverWindow);
-
-        // Заголовок
         const titleText = this.add.text(
             this.cameras.main.centerX,
             this.cameras.main.centerY - 80,
-            'ПОРАЖЕНИЕ',
+            this.missionData ? 'Миссия провалена' : 'ПОРАЖЕНИЕ',
             {
                 fontSize: '24px',
                 fill: '#ff0000',
@@ -599,13 +589,13 @@ export class MainScene extends Phaser.Scene {
             }
         ).setOrigin(0.5).setDepth(102);
         this.gameOverElements.push(titleText);
-
-        // Текст с результатом
         const current = this.collectedGems[this.objective.gemType] || 0;
         const resultText = this.add.text(
             this.cameras.main.centerX,
             this.cameras.main.centerY - 20,
-            `Ходы закончились!\n${this.objective.description}\nСобрано: ${current}/${this.objective.amount}\nНе хватило: ${this.objective.amount - current}`,
+            this.missionData
+                ? `Вы не справились с заданием миссии!\n${this.objective.description}\nСобрано: ${current}/${this.objective.amount}`
+                : `Ходы закончились!\n${this.objective.description}\nСобрано: ${current}/${this.objective.amount}\nНе хватило: ${this.objective.amount - current}`,
             {
                 fontSize: '16px',
                 fill: '#000000',
@@ -613,39 +603,60 @@ export class MainScene extends Phaser.Scene {
             }
         ).setOrigin(0.5).setDepth(102);
         this.gameOverElements.push(resultText);
-
-        // Кнопка "Новая игра"
-        const newGameButton = this.add.rectangle(
-            this.cameras.main.centerX,
+        // Кнопка "Вернуться в замок"
+        const backButton = this.add.rectangle(
+            this.cameras.main.centerX - 80,
             this.cameras.main.centerY + 60,
             150,
             40,
-            0x4CAF50
-        ).setStrokeStyle(2, 0x2E7D32)
+            0x2196F3
+        ).setStrokeStyle(2, 0x1565C0)
         .setInteractive()
         .setDepth(102)
         .on('pointerdown', () => {
-            this.startNewGame();
+            this.scene.start('MapScene');
         })
-        .on('pointerover', () => {
-            newGameButton.setFillStyle(0x66BB6A);
-        })
-        .on('pointerout', () => {
-            newGameButton.setFillStyle(0x4CAF50);
-        });
-        this.gameOverElements.push(newGameButton);
-
-        const buttonText = this.add.text(
-            this.cameras.main.centerX,
+        .on('pointerover', () => backButton.setFillStyle(0x42A5F5))
+        .on('pointerout', () => backButton.setFillStyle(0x2196F3));
+        this.gameOverElements.push(backButton);
+        this.add.text(
+            this.cameras.main.centerX - 80,
             this.cameras.main.centerY + 60,
-            'Новая игра',
+            'В замок',
             {
                 fontSize: '16px',
                 fill: '#ffffff',
                 fontWeight: 'bold'
             }
         ).setOrigin(0.5).setDepth(103);
-        this.gameOverElements.push(buttonText);
+        // Кнопка "Попробовать снова" (повторить миссию)
+        if (this.missionData) {
+            const retryButton = this.add.rectangle(
+                this.cameras.main.centerX + 80,
+                this.cameras.main.centerY + 60,
+                150,
+                40,
+                0x4CAF50
+            ).setStrokeStyle(2, 0x2E7D32)
+            .setInteractive()
+            .setDepth(102)
+            .on('pointerdown', () => {
+                this.startNewGame();
+            })
+            .on('pointerover', () => retryButton.setFillStyle(0x66BB6A))
+            .on('pointerout', () => retryButton.setFillStyle(0x4CAF50));
+            this.gameOverElements.push(retryButton);
+            this.add.text(
+                this.cameras.main.centerX + 80,
+                this.cameras.main.centerY + 60,
+                'Попробовать снова',
+                {
+                    fontSize: '16px',
+                    fill: '#ffffff',
+                    fontWeight: 'bold'
+                }
+            ).setOrigin(0.5).setDepth(103);
+        }
     }
 
     hideGameOverWindow() {
@@ -1172,7 +1183,8 @@ export class MainScene extends Phaser.Scene {
                 this.missionData.zoneId,
                 this.missionData.zoneData,
                 this.missionData.currentLevel,
-                true
+                true,
+                this.missionData.zoneData.missions[this.missionData.currentLevel].amount
             );
         } else {
             this.showWinWindow();
@@ -1181,10 +1193,7 @@ export class MainScene extends Phaser.Scene {
     }
 
     showWinWindow() {
-        // Массив для хранения всех элементов окна
         this.winElements = [];
-        
-        // Создаем полупрозрачный фон
         const winOverlay = this.add.rectangle(
             this.cameras.main.centerX,
             this.cameras.main.centerY,
@@ -1194,8 +1203,6 @@ export class MainScene extends Phaser.Scene {
             0.7
         ).setDepth(100);
         this.winElements.push(winOverlay);
-
-        // Создаем окно победы
         const winWindow = this.add.rectangle(
             this.cameras.main.centerX,
             this.cameras.main.centerY,
@@ -1204,12 +1211,10 @@ export class MainScene extends Phaser.Scene {
             0xffffff
         ).setStrokeStyle(3, 0x00aa00).setDepth(101);
         this.winElements.push(winWindow);
-
-        // Заголовок
         const titleText = this.add.text(
             this.cameras.main.centerX,
             this.cameras.main.centerY - 80,
-            'ПОБЕДА!',
+            this.missionData ? 'Миссия выполнена!' : 'ПОБЕДА!',
             {
                 fontSize: '32px',
                 fill: '#00aa00',
@@ -1217,14 +1222,15 @@ export class MainScene extends Phaser.Scene {
             }
         ).setOrigin(0.5).setDepth(102);
         this.winElements.push(titleText);
-
-        // Текст с результатом
         const current = this.collectedGems[this.objective.gemType] || 0;
         const usedMoves = MAX_MOVES - this.movesLeft;
+        const reward = this.missionData ? 10 * (this.missionData.currentLevel + 1) : 0;
         const resultText = this.add.text(
             this.cameras.main.centerX,
             this.cameras.main.centerY - 30,
-            `Задание выполнено!\n${this.objective.description}\nСобрано: ${current}\nИспользовано ходов: ${usedMoves}`,
+            this.missionData
+                ? `Задание выполнено!\n${this.objective.description}\nСобрано: ${current}\nНаграда: +${reward} ресурсов`
+                : `Задание выполнено!\n${this.objective.description}\nСобрано: ${current}\nИспользовано ходов: ${usedMoves}`,
             {
                 fontSize: '16px',
                 fill: '#000000',
@@ -1232,39 +1238,73 @@ export class MainScene extends Phaser.Scene {
             }
         ).setOrigin(0.5).setDepth(102);
         this.winElements.push(resultText);
-
-        // Кнопка "Новая игра"
-        const newGameButton = this.add.rectangle(
-            this.cameras.main.centerX,
-            this.cameras.main.centerY + 60,
-            150,
-            40,
-            0x4CAF50
-        ).setStrokeStyle(2, 0x2E7D32)
-        .setInteractive()
-        .setDepth(102)
-        .on('pointerdown', () => {
-            this.startNewGame();
-        })
-        .on('pointerover', () => {
-            newGameButton.setFillStyle(0x66BB6A);
-        })
-        .on('pointerout', () => {
-            newGameButton.setFillStyle(0x4CAF50);
-        });
-        this.winElements.push(newGameButton);
-
-        const buttonText = this.add.text(
-            this.cameras.main.centerX,
-            this.cameras.main.centerY + 60,
-            'Новая игра',
-            {
-                fontSize: '16px',
-                fill: '#ffffff',
-                fontWeight: 'bold'
-            }
-        ).setOrigin(0.5).setDepth(103);
-        this.winElements.push(buttonText);
+        // Кнопка "В замок" (зачислить награду, повысить уровень, сохранить)
+        if (this.missionData) {
+            const backButton = this.add.rectangle(
+                this.cameras.main.centerX,
+                this.cameras.main.centerY + 60,
+                200,
+                40,
+                0x2196F3
+            ).setStrokeStyle(2, 0x1565C0)
+            .setInteractive()
+            .setDepth(102)
+            .on('pointerdown', () => {
+                // Зачисляем ресурсы и повышаем уровень зоны
+                const mapScene = this.scene.get('MapScene');
+                if (mapScene) {
+                    mapScene.updateZoneLevel(
+                        this.missionData.zoneId,
+                        this.missionData.zoneData,
+                        this.missionData.currentLevel,
+                        true,
+                        reward
+                    );
+                }
+                this.saveGameState();
+                this.scene.start('MapScene');
+            })
+            .on('pointerover', () => backButton.setFillStyle(0x42A5F5))
+            .on('pointerout', () => backButton.setFillStyle(0x2196F3));
+            this.winElements.push(backButton);
+            this.add.text(
+                this.cameras.main.centerX,
+                this.cameras.main.centerY + 60,
+                'В замок',
+                {
+                    fontSize: '16px',
+                    fill: '#ffffff',
+                    fontWeight: 'bold'
+                }
+            ).setOrigin(0.5).setDepth(103);
+        } else {
+            // Обычная победа
+            const newGameButton = this.add.rectangle(
+                this.cameras.main.centerX,
+                this.cameras.main.centerY + 60,
+                150,
+                40,
+                0x4CAF50
+            ).setStrokeStyle(2, 0x2E7D32)
+            .setInteractive()
+            .setDepth(102)
+            .on('pointerdown', () => {
+                this.startNewGame();
+            })
+            .on('pointerover', () => newGameButton.setFillStyle(0x66BB6A))
+            .on('pointerout', () => newGameButton.setFillStyle(0x4CAF50));
+            this.winElements.push(newGameButton);
+            this.add.text(
+                this.cameras.main.centerX,
+                this.cameras.main.centerY + 60,
+                'Новая игра',
+                {
+                    fontSize: '16px',
+                    fill: '#ffffff',
+                    fontWeight: 'bold'
+                }
+            ).setOrigin(0.5).setDepth(103);
+        }
     }
 
     hideWinWindow() {

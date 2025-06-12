@@ -847,10 +847,12 @@ export class MainScene extends Phaser.Scene {
             const matches = this.detectMatchesDeterministic(this.grid);
             // --- Сохраняем позиции для спец-гемов (матчи из 5) ---
             const bombPositions = [];
+            const bombMatches = [];
             matches.forEach(match => {
                 if (Array.isArray(match) && match.length === 5) {
                     const {x, y} = match[0];
                     bombPositions.push({x, y});
+                    bombMatches.push(match);
                 }
             });
             // Проверяем, есть ли активные гемы рядом с матчами (автоактивация)
@@ -866,15 +868,19 @@ export class MainScene extends Phaser.Scene {
                 }
             });
             bombToActivate = bombToActivate.filter((pos, idx, arr) => arr.findIndex(p => p.x === pos.x && p.y === pos.y) === idx);
-            // Активируем все найденные бомбы (если нужно)
-            //for (const pos of bombToActivate) {
-            //    await this.explodeBomb(pos.x, pos.y);
-            //}
             bombToActivate = [];
             if (matches && matches.length > 0) {
                 console.log(`Каскад #${cascadeCount + 1}: найдено ${matches.length} матчей`);
                 this.sound.play('match', { volume: 0.5 });
-                await this.animateMatches(matches);
+                // --- Кастомная анимация для матчей из 5 ---
+                for (const match of bombMatches) {
+                    await this.animateBombCreation(match);
+                }
+                // Обычная анимация для остальных матчей
+                const otherMatches = matches.filter(m => !bombMatches.includes(m));
+                if (otherMatches.length > 0) {
+                    await this.animateMatches(otherMatches);
+                }
                 matches.forEach((match, matchIndex) => {
                     if (Array.isArray(match)) {
                         match.forEach(({ x, y }) => {
@@ -1506,46 +1512,114 @@ export class MainScene extends Phaser.Scene {
     // Взрыв активного гема: уничтожает все смежные гемы
     async explodeBomb(x, y) {
         if (this.grid[y][x] !== 6) return;
-        // Визуальный эффект
+        // Визуальный эффект для самой бомбы
+        const animPromises = [];
         if (this.sprites[y][x]) {
-            this.tweens.add({
-                targets: this.sprites[y][x],
-                scaleX: 1.5,
-                scaleY: 1.5,
-                alpha: 0,
-                duration: 250,
-                ease: 'Back.easeIn',
-                onComplete: () => {
-                    if (this.sprites[y][x]) this.sprites[y][x].destroy();
-                }
-            });
+            animPromises.push(new Promise(resolve => {
+                this.tweens.add({
+                    targets: this.sprites[y][x],
+                    scaleX: 1.5,
+                    scaleY: 1.5,
+                    alpha: 0,
+                    duration: 250,
+                    ease: 'Back.easeIn',
+                    onComplete: () => {
+                        if (this.sprites[y][x]) this.sprites[y][x].destroy();
+                        resolve();
+                    }
+                });
+            }));
         }
-        // Удаляем саму бомбу
         this.grid[y][x] = 0;
-        // Удаляем все смежные гемы
+        // Анимация уничтожения смежных гемов
         for (const {nx, ny} of this.getNeighbors(x, y)) {
             if (this.grid[ny][nx] > 0 && this.grid[ny][nx] <= 6) {
                 if (this.sprites[ny][nx]) {
-                    this.tweens.add({
-                        targets: this.sprites[ny][nx],
-                        scaleX: 0,
-                        scaleY: 0,
-                        alpha: 0,
-                        duration: 200,
-                        ease: 'Back.easeIn',
-                        onComplete: () => {
-                            if (this.sprites[ny][nx]) this.sprites[ny][nx].destroy();
-                        }
-                    });
+                    animPromises.push(new Promise(resolve => {
+                        this.tweens.add({
+                            targets: this.sprites[ny][nx],
+                            scaleX: 0,
+                            scaleY: 0,
+                            alpha: 0,
+                            duration: 200,
+                            ease: 'Back.easeIn',
+                            onComplete: () => {
+                                if (this.sprites[ny][nx]) this.sprites[ny][nx].destroy();
+                                resolve();
+                            }
+                        });
+                    }));
                 }
                 this.grid[ny][nx] = 0;
             }
         }
+        // Ждём завершения всех анимаций
+        await Promise.all(animPromises);
         // После взрыва — применяем гравитацию и спавним новые элементы
         await this.animateGravity();
         this.gameLogic.applyGravity(this.grid);
         this.customSpawnNewElements(this.grid, 0);
         await this.animateNewElements();
+    }
+
+    // Анимация объединения пяти гемов в бомбу
+    async animateBombCreation(match) {
+        if (!Array.isArray(match) || match.length !== 5) return;
+        const target = match[0];
+        const sprites = match.map(({x, y}) => this.sprites[y][x]).filter(Boolean);
+        const targetSprite = this.sprites[target.y][target.x];
+        const targetX = targetSprite ? targetSprite.x : (target.x * (elementWidth + elementSpacing) + elementWidth / 2);
+        const targetY = targetSprite ? targetSprite.y : (target.y * (elementHeight + elementSpacing) + elementHeight / 2);
+        // Анимируем стягивание всех гемов к первой позиции
+        const promises = sprites.map((sprite, idx) => {
+            return new Promise(resolve => {
+                this.tweens.add({
+                    targets: sprite,
+                    x: targetX,
+                    y: targetY,
+                    scaleX: 0.5,
+                    scaleY: 0.5,
+                    alpha: 0.7,
+                    duration: 300 + idx * 50,
+                    ease: 'Power2',
+                    onComplete: () => {
+                        this.tweens.add({
+                            targets: sprite,
+                            scaleX: 0,
+                            scaleY: 0,
+                            alpha: 0,
+                            duration: 150,
+                            ease: 'Back.easeIn',
+                            onComplete: () => {
+                                sprite.setVisible(false);
+                                resolve();
+                            }
+                        });
+                    }
+                });
+            });
+        });
+        await Promise.all(promises);
+        // Визуальный эффект появления бомбы
+        const bomb = this.add.image(targetX, targetY, 'gem6');
+        bomb.setDisplaySize(gemSize, gemSize);
+        bomb.setScale(0);
+        bomb.setAlpha(0);
+        bomb.setDepth(10);
+        await new Promise(resolve => {
+            this.tweens.add({
+                targets: bomb,
+                scaleX: 1,
+                scaleY: 1,
+                alpha: 1,
+                duration: 250,
+                ease: 'Back.easeOut',
+                onComplete: () => {
+                    bomb.destroy();
+                    resolve();
+                }
+            });
+        });
     }
 }
 

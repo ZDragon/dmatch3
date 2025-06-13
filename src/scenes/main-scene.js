@@ -917,59 +917,11 @@ export class MainScene extends Phaser.Scene {
                 }
             });
 
-            // Проверяем, есть ли активные гемы рядом с матчами (автоактивация)
-            matches.forEach(match => {
-                if (Array.isArray(match)) {
-                    match.forEach(({x, y}) => {
-                        // Проверяем, что в этой позиции есть обычный гем (1-5)
-                        if (this.grid[y][x] >= 1 && this.grid[y][x] <= 5) {
-                            this.getNeighbors(x, y).forEach(({nx, ny}) => {
-                                if (this.grid[ny] && this.grid[ny][nx] === 6) {
-                                    bombToActivate.push({x: nx, y: ny});
-                                }
-                            });
-                        }
-                    });
-                }
-            });
-
-            bombToActivate = bombToActivate.filter((pos, idx, arr) => arr.findIndex(p => p.x === pos.x && p.y === pos.y) === idx);
-            if (bombToActivate.length > 0) {
-                console.log('bombToActivate', bombToActivate);
-                for (const bomb of bombToActivate) {
-                    await this.explodeBomb(bomb.x, bomb.y);
-                }
-                bombToActivate = [];
-            }
-
             if (matches && matches.length > 0) {
                 console.log(`Каскад #${cascadeCount + 1}: найдено ${matches.length} матчей`);
                 this.sound.play('match', { volume: 0.5 });
 
-                // --- Кастомная анимация для матчей из 5 ---
-                for (const match of bombMatches) {
-                    this.grid[match[0].y][match[0].x] = BOMB;
-                    await this.animateBombCreation(match);
-                }
-
-                // Анимация для матчей из 4
-                for (const match of matches.filter(m => Array.isArray(m) && m.length === 4)) {
-                    const isVertical = match.every((pos, idx, arr) => idx === 0 || pos.x === arr[0].x);
-                    if (isVertical) {
-                        this.grid[match[0].y][match[0].x] = VERTICAL_BOMB;
-                        await this.animateVerticalBombCreation(match);
-                    } else {
-                        this.grid[match[0].y][match[0].x] = HORIZONTAL_BOMB;
-                        await this.animateHorizontalBombCreation(match);
-                    }
-                }
-
-                // Обычная анимация для остальных матчей
-                const otherMatches = matches.filter(m => !bombMatches.includes(m) && (!Array.isArray(m) || m.length !== 4));
-                if (otherMatches.length > 0) {
-                    await this.animateMatches(otherMatches);
-                }
-
+                // Подсчитываем собранные камни
                 matches.forEach((match, matchIndex) => {
                     if (Array.isArray(match)) {
                         match.forEach(({ x, y }) => {
@@ -982,6 +934,40 @@ export class MainScene extends Phaser.Scene {
                         });
                     }
                 });
+
+                // --- Кастомная анимация для матчей из 5 ---
+                for (const match of bombMatches) {
+                    // Проверяем, что матч все еще актуален
+                    if (this.isMatchStillValid(match)) {
+                        this.grid[match[0].y][match[0].x] = BOMB;
+                        await this.animateBombCreation(match);
+                    }
+                }
+
+                // Анимация для матчей из 4
+                for (const match of matches.filter(m => Array.isArray(m) && m.length === 4)) {
+                    // Проверяем, что матч все еще актуален
+                    if (this.isMatchStillValid(match)) {
+                        const isVertical = match.every((pos, idx, arr) => idx === 0 || pos.x === arr[0].x);
+                        if (isVertical) {
+                            this.grid[match[0].y][match[0].x] = VERTICAL_BOMB;
+                            await this.animateVerticalBombCreation(match);
+                        } else {
+                            this.grid[match[0].y][match[0].x] = HORIZONTAL_BOMB;
+                            await this.animateHorizontalBombCreation(match);
+                        }
+                    }
+                }
+
+                // Обычная анимация для остальных матчей
+                const otherMatches = matches.filter(m => !bombMatches.includes(m) && (!Array.isArray(m) || m.length !== 4));
+                if (otherMatches.length > 0) {
+                    // Фильтруем только актуальные матчи
+                    const validMatches = otherMatches.filter(match => this.isMatchStillValid(match));
+                    if (validMatches.length > 0) {
+                        await this.animateMatches(validMatches);
+                    }
+                }
 
                 // Удаляем матчи
                 this.gameLogic.removeMatches(this.grid, matches);
@@ -1005,10 +991,45 @@ export class MainScene extends Phaser.Scene {
                     }
                 });
 
+                // Проверяем, есть ли активные гемы рядом с матчами (автоактивация)
+                matches.forEach(match => {
+                    if (Array.isArray(match)) {
+                        match.forEach(({x, y}) => {
+                            // Проверяем, что в этой позиции есть обычный гем (1-5) и его спрайт видим
+                            if (this.grid[y][x] >= 1 && this.grid[y][x] <= 5 && 
+                                this.sprites[y][x] && this.sprites[y][x].visible) {
+                                this.getNeighbors(x, y).forEach(({nx, ny}) => {
+                                    if (this.grid[ny] && this.grid[ny][nx] === 6 && 
+                                        this.sprites[ny][nx] && this.sprites[ny][nx].visible) {
+                                        bombToActivate.push({x: nx, y: ny});
+                                    }
+                                });
+                            }
+                        });
+                    }
+                });
+
+                bombToActivate = bombToActivate.filter((pos, idx, arr) => arr.findIndex(p => p.x === pos.x && p.y === pos.y) === idx);
+                if (bombToActivate.length > 0) {
+                    console.log('bombToActivate', bombToActivate);
+                    for (const bomb of bombToActivate) {
+                        await this.explodeBomb(bomb.x, bomb.y);
+                    }
+                    bombToActivate = [];
+                }
+
                 await this.animateGravity();
                 this.gameLogic.applyGravity(this.grid);
                 this.customSpawnNewElements(this.grid, cascadeCount);
                 await this.animateNewElements();
+
+                // Проверяем новые матчи после создания бомб и применения гравитации
+                const newMatches = this.detectMatchesDeterministic(this.grid);
+                if (newMatches && newMatches.length > 0) {
+                    console.log(`Найдены новые матчи после создания бомб: ${newMatches.length}`);
+                    continue; // Продолжаем цикл с новыми матчами
+                }
+
                 cascadeCount++;
                 await this.delay(300);
             } else {
@@ -1023,6 +1044,22 @@ export class MainScene extends Phaser.Scene {
         this.updateProgressDisplay();
         this.checkWinCondition();
         console.log(`Обработано каскадов: ${cascadeCount}, Random calls: ${this.randomCallCounter}`);
+    }
+
+    // Проверяет, что матч все еще актуален (все гемы на месте и того же типа)
+    isMatchStillValid(match) {
+        if (!Array.isArray(match) || match.length === 0) return false;
+        
+        const firstGemType = this.grid[match[0].y][match[0].x];
+        if (firstGemType === 0) return false; // Если первый гем уже удален, матч неактуален
+        
+        return match.every(({x, y}) => {
+            // Проверяем, что гем существует и того же типа
+            return this.grid[y] && 
+                   this.grid[y][x] === firstGemType && 
+                   this.sprites[y][x] && 
+                   this.sprites[y][x].visible;
+        });
     }
 
     // Анимация найденных матчей
@@ -1149,21 +1186,30 @@ export class MainScene extends Phaser.Scene {
                                 y: newY,
                                 duration: 200 + emptySpaces * 50, // больше расстояние = дольше падение
                                 ease: 'Bounce.easeOut',
-                                onComplete: resolve
+                                onComplete: () => {
+                                    // Обновляем тип спрайта после падения
+                                    const gemType = this.grid[row][col];
+                                    sprite.setTexture(`gem${gemType}`);
+                                    resolve();
+                                }
                             });
                         });
                         
                         animationPromises.push(promise);
                         
-                        // Обновляем позицию в массиве спрайтов
+                        // Обновляем позицию в массиве спрайтов и в сетке
                         this.sprites[newRow][col] = sprite;
                         this.sprites[row][col] = null;
+                        this.grid[newRow][col] = this.grid[row][col];
+                        this.grid[row][col] = 0;
+                        
+                        // Обновляем координаты в спрайте
+                        sprite.gridY = newRow;
                     }
                 }
             }
         }
         
-        // Ждем завершения всех анимаций падения
         await Promise.all(animationPromises);
     }
 
@@ -1177,6 +1223,12 @@ export class MainScene extends Phaser.Scene {
                 if (!this.sprites[row][col] || !this.sprites[row][col].visible) {
                     const gemType = this.grid[row][col];
                     if (gemType > 0) {
+                        // Уничтожаем старый спрайт, если он существует
+                        if (this.sprites[row][col]) {
+                            this.sprites[row][col].destroy();
+                            this.sprites[row][col] = null;
+                        }
+
                         // Создаем новый спрайт
                         const sprite = this.add.image(
                             col * (elementWidth + elementSpacing) + elementWidth / 2,
@@ -1629,12 +1681,16 @@ export class MainScene extends Phaser.Scene {
                     ease: 'Back.easeIn',
                     onComplete: () => {
                         if (this.sprites[y][x]) this.sprites[y][x].destroy();
+                        // Обновляем состояние сетки только после завершения анимации
+                        this.grid[y][x] = 0;
                         resolve();
                     }
                 });
             }));
+        } else {
+            this.grid[y][x] = 0;
         }
-        this.grid[y][x] = 0;
+
         // Анимация уничтожения смежных гемов
         for (const {nx, ny} of this.getNeighbors(x, y)) {
             if (this.grid[ny][nx] > 0 && this.grid[ny][nx] <= 5) {
@@ -1649,13 +1705,16 @@ export class MainScene extends Phaser.Scene {
                             ease: 'Back.easeIn',
                             onComplete: () => {
                                 if (this.sprites[ny][nx]) this.sprites[ny][nx].destroy();
+                                // Обновляем состояние сетки только после завершения анимации
+                                this.grid[ny][nx] = 0;
                                 resolve();
                             }
                         });
                     }));
+                } else {
+                    this.grid[ny][nx] = 0;
                 }
-                this.grid[ny][nx] = 0;
-            }  else {
+            } else {
                 if (this.grid[ny][nx] === 6) {
                     await this.explodeBomb(nx, ny);
                 }
@@ -1686,10 +1745,6 @@ export class MainScene extends Phaser.Scene {
         const targetX = targetSprite ? targetSprite.x : (target.x * (elementWidth + elementSpacing) + elementWidth / 2);
         const targetY = targetSprite ? targetSprite.y : (target.y * (elementHeight + elementSpacing) + elementHeight / 2);
 
-        for (const gem of match) {
-            this.grid[gem.y][gem.x] = 0;
-        }
-
         // Анимируем стягивание всех гемов к первой позиции
         const promises = sprites.map((sprite, idx) => {
             return new Promise(resolve => {
@@ -1712,6 +1767,10 @@ export class MainScene extends Phaser.Scene {
                             ease: 'Back.easeIn',
                             onComplete: () => {
                                 sprite.setVisible(false);
+                                // Обновляем состояние сетки только после завершения анимации
+                                const gridX = sprite.gridX;
+                                const gridY = sprite.gridY;
+                                this.grid[gridY][gridX] = 0;
                                 resolve();
                             }
                         });
@@ -1745,10 +1804,6 @@ export class MainScene extends Phaser.Scene {
         const targetSprite = this.sprites[target.y][target.x];
         const targetX = targetSprite ? targetSprite.x : (target.x * (elementWidth + elementSpacing) + elementWidth / 2);
         const targetY = targetSprite ? targetSprite.y : (target.y * (elementHeight + elementSpacing) + elementHeight / 2);
-
-        for (const gem of match) {
-            this.grid[gem.y][gem.x] = 0;
-        }
         
         // Анимируем стягивание всех гемов к первой позиции
         const promises = sprites.map((sprite, idx) => {
@@ -1772,6 +1827,10 @@ export class MainScene extends Phaser.Scene {
                             ease: 'Back.easeIn',
                             onComplete: () => {
                                 sprite.setVisible(false);
+                                // Обновляем состояние сетки только после завершения анимации
+                                const gridX = sprite.gridX;
+                                const gridY = sprite.gridY;
+                                this.grid[gridY][gridX] = 0;
                                 resolve();
                             }
                         });
@@ -1809,10 +1868,6 @@ export class MainScene extends Phaser.Scene {
         const targetX = targetSprite ? targetSprite.x : (target.x * (elementWidth + elementSpacing) + elementWidth / 2);
         const targetY = targetSprite ? targetSprite.y : (target.y * (elementHeight + elementSpacing) + elementHeight / 2);
         
-        for (const gem of match) {
-            this.grid[gem.y][gem.x] = 0;
-        }
-
         // Анимируем стягивание всех гемов к первой позиции
         const promises = sprites.map((sprite, idx) => {
             return new Promise(resolve => {
@@ -1835,6 +1890,10 @@ export class MainScene extends Phaser.Scene {
                             ease: 'Back.easeIn',
                             onComplete: () => {
                                 sprite.setVisible(false);
+                                // Обновляем состояние сетки только после завершения анимации
+                                const gridX = sprite.gridX;
+                                const gridY = sprite.gridY;
+                                this.grid[gridY][gridX] = 0;
                                 resolve();
                             }
                         });
@@ -2002,34 +2061,37 @@ export class MainScene extends Phaser.Scene {
     }
 
     createSprite(gemType, row, col, invisible = false) {
-        if (!this.sprites[row][col] || !this.sprites[row][col].visible) {
-            if (gemType > 0) {
-                // Создаем новый спрайт
-                const sprite = this.add.image(
-                    col * (elementWidth + elementSpacing) + elementWidth / 2,
-                    row * (elementHeight + elementSpacing) + elementHeight / 2,
-                    `gem${gemType}`
-                );
-                sprite.setDisplaySize(gemSize, gemSize);
-                sprite.setInteractive({ useHandCursor: true });
-                sprite.setDepth(1);
-                if (invisible) {
-                    sprite.setScale(0); // начинаем с нулевого размера
-                    sprite.setAlpha(0); // и прозрачности
-                }
-                sprite.gridX = col;
-                sprite.gridY = row;
-                // --- ДОБАВЛЯЕМ: обработка клика по активному гемy ---
-                if (gemType === 6) {
-                    sprite.on('pointerdown', () => {
-                        this.explodeBomb(col, row);
-                    });
-                }
-                this.sprites[row][col] = sprite;
-                return sprite;
-            }
+        // Уничтожаем старый спрайт, если он существует
+        if (this.sprites[row][col]) {
+            this.sprites[row][col].destroy();
+            this.sprites[row][col] = null;
         }
-        console.log('sprite not found');
+
+        if (gemType > 0) {
+            // Создаем новый спрайт
+            const sprite = this.add.image(
+                col * (elementWidth + elementSpacing) + elementWidth / 2,
+                row * (elementHeight + elementSpacing) + elementHeight / 2,
+                `gem${gemType}`
+            );
+            sprite.setDisplaySize(gemSize, gemSize);
+            sprite.setInteractive({ useHandCursor: true });
+            sprite.setDepth(1);
+            if (invisible) {
+                sprite.setScale(0); // начинаем с нулевого размера
+                sprite.setAlpha(0); // и прозрачности
+            }
+            sprite.gridX = col;
+            sprite.gridY = row;
+            // --- ДОБАВЛЯЕМ: обработка клика по активному гемy ---
+            if (gemType === 6) {
+                sprite.on('pointerdown', () => {
+                    this.explodeBomb(col, row);
+                });
+            }
+            this.sprites[row][col] = sprite;
+            return sprite;
+        }
         return null;
     }
 }

@@ -31,6 +31,8 @@ export class MainScene extends Phaser.Scene {
         this.gemModifier = { targetGemType: 1, multiplier: 1 };
         this.randomCallCounter = 0;
         this.isAnimating = false;
+        this.showGrid = false; // Флаг для отображения сетки
+        this.gridGraphics = null; // Графика для отрисовки сетки
         
         // Реплей
         this.actionLog = [];
@@ -45,6 +47,7 @@ export class MainScene extends Phaser.Scene {
         this.uiManager = new UIManager(this);
         this.gameLogic = new GameLogic(this);
         this.replayManager = new ReplayManager(this);
+        this.lastState = null; // Сохраняем последнее состояние для отмены
     }
 
     preload() {
@@ -103,6 +106,13 @@ export class MainScene extends Phaser.Scene {
         } else {
             this.startNewGame();
         }
+
+        // Создаем графику для отрисовки сетки
+        this.gridGraphics = this.add.graphics();
+        this.gridGraphics.setDepth(100); // Поверх всех гемов
+        this.gridTexts = []; // Массив для хранения текстов
+        this.showGrid = false; // Инициализируем флаг видимости сетки
+        this.updateGridOverlay();
     }
 
     createUI() {
@@ -144,16 +154,6 @@ export class MainScene extends Phaser.Scene {
             wordWrap: { width: 140 }
         });
         
-        // Кнопка "Новая игра"
-        this.uiManager.createButton(uiX, uiY + 160, 100, 25, 'Новая игра', () => {
-            this.startNewGame();
-        });
-        
-        // Кнопка админ-панели
-        this.uiManager.createButton(uiX, uiY + 195, 100, 25, 'Админ', () => {
-            this.scene.launch('AdminPanelScene');
-        });
-        
         // Текст статуса
         this.statusText = this.add.text(uiX, uiY + 335, '', { 
             fontSize: '11px', 
@@ -178,6 +178,8 @@ export class MainScene extends Phaser.Scene {
     }
 
     createNavigationButtons(x, y) {
+        console.log('Creating navigation buttons at', x, y);
+        
         // Кнопка возврата к замку
         const backButton = this.add.rectangle(x, y, 100, 30, 0x4CAF50)
             .setInteractive({ useHandCursor: true })
@@ -192,24 +194,57 @@ export class MainScene extends Phaser.Scene {
             })
             .on('pointerover', () => backButton.setFillStyle(0x66BB6A))
             .on('pointerout', () => backButton.setFillStyle(0x4CAF50));
-
-        const backText = this.add.text(x, y, '← Назад', {
-            fontSize: '14px',
-            fill: '#ffffff'
+            
+        this.add.text(x, y, 'Назад', { 
+            fontSize: '14px', 
+            fill: '#ffffff' 
         }).setOrigin(0.5);
 
-        // Кнопка меню
-        const menuButton = this.add.rectangle(x + 110, y, 100, 30, 0x2196F3)
+        // Кнопка Админ
+        const adminButton = this.add.rectangle(x, y + 40, 100, 30, 0x4CAF50)
             .setInteractive({ useHandCursor: true })
             .on('pointerdown', () => {
-                this.scene.start('MenuScene');
+                this.scene.launch('AdminPanelScene');
             })
-            .on('pointerover', () => menuButton.setFillStyle(0x42A5F5))
-            .on('pointerout', () => menuButton.setFillStyle(0x2196F3));
+            .on('pointerover', () => adminButton.setFillStyle(0x66BB6A))
+            .on('pointerout', () => adminButton.setFillStyle(0x4CAF50));
+            
+        this.add.text(x, y + 40, 'Админ', { 
+            fontSize: '14px', 
+            fill: '#ffffff' 
+        }).setOrigin(0.5);
 
-        const menuText = this.add.text(x + 110, y, 'Меню', {
-            fontSize: '14px',
-            fill: '#ffffff'
+        // Кнопка отображения сетки
+        const toggleGridButton = this.add.rectangle(x, y + 80, 100, 30, 0x4CAF50)
+            .setInteractive({ useHandCursor: true })
+            .on('pointerdown', () => {
+                console.log('Toggle grid button clicked, current state:', this.showGrid);
+                this.showGrid = !this.showGrid;
+                console.log('New grid state:', this.showGrid);
+                toggleGridButtonText.setText(this.showGrid ? 'Скрыть сетку' : 'Показать сетку');
+                this.updateGridOverlay();
+            })
+            .on('pointerover', () => toggleGridButton.setFillStyle(0x66BB6A))
+            .on('pointerout', () => toggleGridButton.setFillStyle(0x4CAF50));
+            
+        const toggleGridButtonText = this.add.text(x, y + 80, 'Показать сетку', { 
+            fontSize: '14px', 
+            fill: '#ffffff' 
+        }).setOrigin(0.5);
+
+        // Кнопка отмены хода
+        const undoButton = this.add.rectangle(x, y + 120, 100, 30, 0x4CAF50)
+            .setInteractive({ useHandCursor: true })
+            .on('pointerdown', () => {
+                console.log('Undo button clicked');
+                this.undoLastMove();
+            })
+            .on('pointerover', () => undoButton.setFillStyle(0x66BB6A))
+            .on('pointerout', () => undoButton.setFillStyle(0x4CAF50));
+            
+        this.add.text(x, y + 120, 'Отменить ход', { 
+            fontSize: '14px', 
+            fill: '#ffffff' 
         }).setOrigin(0.5);
     }
 
@@ -531,18 +566,18 @@ export class MainScene extends Phaser.Scene {
     handleInput(pointer) {
         console.log('handleInput вызван, gameOver:', this.gameOver, 'isReplaying:', this.isReplaying, 'isAnimating:', this.isAnimating);
         
-        if (this.isReplaying || this.gameOver || this.isAnimating) {
+        if (this.isReplaying || this.gameOver || this.isAnimating || this.isProcessing) {
             console.log('Ввод заблокирован');
             return;
         }
-        
+
         const x = Math.floor(pointer.x / (elementWidth + elementSpacing));
         const y = Math.floor(pointer.y / (elementHeight + elementSpacing));
 
         console.log('Клик по координатам:', x, y);
 
+        // Проверяем, что координаты в пределах сетки
         if (x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT) {
-            console.log('Клик за пределами сетки');
             return;
         }
 
@@ -749,6 +784,7 @@ export class MainScene extends Phaser.Scene {
     // Обновляем swapElements для использования анимации
     async swapElements(from, to, shouldLog = true) {
         console.log(`Обмен: (${from.x},${from.y}) <-> (${to.x},${to.y}), Random calls before: ${this.randomCallCounter}`);
+        this.saveState();
         
         this.isAnimating = true;
         
@@ -760,12 +796,36 @@ export class MainScene extends Phaser.Scene {
         this.grid[from.y][from.x] = this.grid[to.y][to.x];
         this.grid[to.y][to.x] = temp;
 
+        this.updateGridOverlay();
+
         // Обрабатываем матчи с анимацией
         await this.processMatchesAnimated();
         
+        //this.rerenderGrid();
         this.isAnimating = false;
         
         console.log(`Обмен завершен, Random calls after: ${this.randomCallCounter}`);
+    }
+
+    rerenderGrid() {
+        console.log('Rerendering grid');
+
+        // Создаем новые спрайты
+        this.grid.forEach((row, y) => {
+            row.forEach((gemType, x) => {
+                if (gemType > 0) {
+                    this.sprites[y][x].destroy();
+                    const sprite = this.createSprite(gemType, y, x, false);
+                    this.sprites[y][x] = sprite;
+                } else {
+                    this.sprites[y][x].destroy();
+                    this.sprites[y][x] = null;
+                }
+            });
+        });
+
+        // Обновляем отображение сетки
+        this.updateGridOverlay();
     }
 
     // Анимация обмена двух элементов
@@ -799,6 +859,10 @@ export class MainScene extends Phaser.Scene {
                 ease: 'Power2',
                 onComplete: () => {
                     // Обновляем позиции в массиве спрайтов
+                    sprite2.gridX = from.x;
+                    sprite2.gridY = from.y;
+                    sprite1.gridX = to.x;
+                    sprite1.gridY = to.y;
                     this.sprites[from.y][from.x] = sprite2;
                     this.sprites[to.y][to.x] = sprite1;
                     resolve();
@@ -935,32 +999,8 @@ export class MainScene extends Phaser.Scene {
                     }
                 });
 
-                // --- Кастомная анимация для матчей из 5 ---
-                for (const match of bombMatches) {
-                    // Проверяем, что матч все еще актуален
-                    if (this.isMatchStillValid(match)) {
-                        this.grid[match[0].y][match[0].x] = BOMB;
-                        await this.animateBombCreation(match);
-                    }
-                }
-
-                // Анимация для матчей из 4
-                for (const match of matches.filter(m => Array.isArray(m) && m.length === 4)) {
-                    // Проверяем, что матч все еще актуален
-                    if (this.isMatchStillValid(match)) {
-                        const isVertical = match.every((pos, idx, arr) => idx === 0 || pos.x === arr[0].x);
-                        if (isVertical) {
-                            this.grid[match[0].y][match[0].x] = VERTICAL_BOMB;
-                            await this.animateVerticalBombCreation(match);
-                        } else {
-                            this.grid[match[0].y][match[0].x] = HORIZONTAL_BOMB;
-                            await this.animateHorizontalBombCreation(match);
-                        }
-                    }
-                }
-
                 // Обычная анимация для остальных матчей
-                const otherMatches = matches.filter(m => !bombMatches.includes(m) && (!Array.isArray(m) || m.length !== 4));
+                const otherMatches = matches.filter(m => !bombMatches.includes(m) && (!Array.isArray(m) || m.length !== 4 || m.length !== 5));
                 if (otherMatches.length > 0) {
                     // Фильтруем только актуальные матчи
                     const validMatches = otherMatches.filter(match => this.isMatchStillValid(match));
@@ -969,27 +1009,23 @@ export class MainScene extends Phaser.Scene {
                     }
                 }
 
-                // Удаляем матчи
-                this.gameLogic.removeMatches(this.grid, matches);
+                // --- Кастомная анимация для матчей из 5 ---
+                for (const match of bombMatches) {
+                    await this.animateBombCreation(match);
+                    this.grid[match[0].y][match[0].x] = BOMB;
+                }
 
-                // --- Теперь ставим спец-гемы на пустые места после удаления ---
-                bombPositions.forEach(({x, y}) => {
-                    if (this.grid[y][x] === 0) {
-                        this.grid[y][x] = 6;
+                // Анимация для матчей из 4
+                for (const match of matches.filter(m => Array.isArray(m) && m.length === 4)) {
+                    const isVertical = match.every((pos, idx, arr) => idx === 0 || pos.x === arr[0].x);
+                    if (isVertical) {
+                        await this.animateVerticalBombCreation(match);
+                        this.grid[match[0].y][match[0].x] = VERTICAL_BOMB;
+                    } else {
+                        await this.animateHorizontalBombCreation(match);
+                        this.grid[match[0].y][match[0].x] = HORIZONTAL_BOMB;
                     }
-                });
-
-                verticalBombPositions.forEach(({x, y}) => {
-                    if (this.grid[y][x] === 0) {
-                        this.grid[y][x] = VERTICAL_BOMB;
-                    }
-                });
-
-                horizontalBombPositions.forEach(({x, y}) => {
-                    if (this.grid[y][x] === 0) {
-                        this.grid[y][x] = HORIZONTAL_BOMB;
-                    }
-                });
+                }
 
                 // Проверяем, есть ли активные гемы рядом с матчами (автоактивация)
                 matches.forEach(match => {
@@ -1018,8 +1054,10 @@ export class MainScene extends Phaser.Scene {
                     bombToActivate = [];
                 }
 
+                //debugger;
                 await this.animateGravity();
                 this.gameLogic.applyGravity(this.grid);
+                this.rerenderGrid();
                 this.customSpawnNewElements(this.grid, cascadeCount);
                 await this.animateNewElements();
 
@@ -1117,7 +1155,12 @@ export class MainScene extends Phaser.Scene {
                         delay: index * 50, // небольшая задержка между элементами
                         ease: 'Back.easeIn',
                         onComplete: () => {
+                            const gridX = sprite.gridX;
+                            const gridY = sprite.gridY;
+                            this.grid[gridY][gridX] = 0;
                             sprite.setVisible(false);
+                            sprite.destroy();
+                            sprite = null;
                             if (index === matchSprites.length - 1) {
                                 resolve(); // завершаем когда последний элемент исчез
                             }
@@ -1187,24 +1230,19 @@ export class MainScene extends Phaser.Scene {
                                 duration: 200 + emptySpaces * 50, // больше расстояние = дольше падение
                                 ease: 'Bounce.easeOut',
                                 onComplete: () => {
-                                    // Обновляем тип спрайта после падения
-                                    const gemType = this.grid[row][col];
-                                    sprite.setTexture(`gem${gemType}`);
+                                    // Обновляем координаты в спрайте
+                                    sprite.gridY = newRow;
                                     resolve();
                                 }
                             });
                         });
-                        
-                        animationPromises.push(promise);
-                        
+
                         // Обновляем позицию в массиве спрайтов и в сетке
                         this.sprites[newRow][col] = sprite;
-                        this.sprites[row][col] = null;
                         this.grid[newRow][col] = this.grid[row][col];
                         this.grid[row][col] = 0;
                         
-                        // Обновляем координаты в спрайте
-                        sprite.gridY = newRow;
+                        animationPromises.push(promise);
                     }
                 }
             }
@@ -1312,6 +1350,7 @@ export class MainScene extends Phaser.Scene {
                 
                 this.gameLogic.removeMatches(this.grid, matches);
                 this.gameLogic.applyGravity(this.grid);
+                this.rerenderGrid();
                 this.customSpawnNewElements(this.grid, cascadeCount);
                 
                 cascadeCount++;
@@ -1563,26 +1602,16 @@ export class MainScene extends Phaser.Scene {
     }
 
     shutdown() {
-        // Очищаем все текстовые поля
-        if (this.movesText) {
-            this.movesText.destroy();
-            this.movesText = null;
+        // Очищаем все тексты сетки
+        if (this.gridTexts) {
+            this.gridTexts.forEach(text => text.destroy());
         }
-        if (this.objectiveText) {
-            this.objectiveText.destroy();
-            this.objectiveText = null;
-        }
-        if (this.progressText) {
-            this.progressText.destroy();
-            this.progressText = null;
-        }
-        if (this.statusText) {
-            this.statusText.destroy();
-            this.statusText = null;
-        }
-        if (this.logText) {
-            this.logText.destroy();
-            this.logText = null;
+        this.gridTexts = [];
+
+        // Очищаем графику сетки
+        if (this.gridGraphics) {
+            this.gridGraphics.clear();
+            this.gridGraphics.destroy();
         }
 
         // Очищаем все спрайты
@@ -1594,11 +1623,8 @@ export class MainScene extends Phaser.Scene {
                     }
                 });
             });
-            this.sprites = [];
         }
-
-        // Очищаем все оверлеи
-        this.clearAllOverlays();
+        this.sprites = [];
     }
 
     startMission(data) {
@@ -1729,8 +1755,10 @@ export class MainScene extends Phaser.Scene {
         // Ждём завершения всех анимаций
         await Promise.all(animPromises);
         // После взрыва — применяем гравитацию и спавним новые элементы
+        //debugger;
         await this.animateGravity();
         this.gameLogic.applyGravity(this.grid);
+        this.rerenderGrid();
         this.customSpawnNewElements(this.grid, 0);
         await this.animateNewElements();
         await this.processMatchesAnimated();
@@ -1986,6 +2014,7 @@ export class MainScene extends Phaser.Scene {
         // После взрыва — применяем гравитацию и спавним новые элементы
         await this.animateGravity();
         this.gameLogic.applyGravity(this.grid);
+        this.rerenderGrid();
         this.customSpawnNewElements(this.grid, 0);
         await this.animateNewElements();
         await this.processMatchesAnimated();
@@ -2055,6 +2084,7 @@ export class MainScene extends Phaser.Scene {
         // После взрыва — применяем гравитацию и спавним новые элементы
         await this.animateGravity();
         this.gameLogic.applyGravity(this.grid);
+        this.rerenderGrid();
         this.customSpawnNewElements(this.grid, 0);
         await this.animateNewElements();
         await this.processMatchesAnimated();
@@ -2093,6 +2123,101 @@ export class MainScene extends Phaser.Scene {
             return sprite;
         }
         return null;
+    }
+
+    // Метод для обновления отображения сетки
+    updateGridOverlay() {
+        console.log('Updating grid overlay, showGrid:', this.showGrid);
+        
+        // Очищаем все тексты
+        if (this.gridTexts) {
+            this.gridTexts.forEach(text => text.destroy());
+        }
+        this.gridTexts = [];
+        
+        // Очищаем графику
+        this.gridGraphics.clear();
+        
+        if (!this.showGrid) return;
+
+        // Рисуем сетку
+        this.gridGraphics.lineStyle(1, 0xffffff, 0.5);
+        
+        // Вертикальные линии
+        for (let x = 0; x <= this.grid[0].length; x++) {
+            const xPos = x * (elementWidth + elementSpacing);
+            this.gridGraphics.moveTo(xPos, 0);
+            this.gridGraphics.lineTo(xPos, this.grid.length * (elementHeight + elementSpacing));
+        }
+        
+        // Горизонтальные линии
+        for (let y = 0; y <= this.grid.length; y++) {
+            const yPos = y * (elementHeight + elementSpacing);
+            this.gridGraphics.moveTo(0, yPos);
+            this.gridGraphics.lineTo(this.grid[0].length * (elementWidth + elementSpacing), yPos);
+        }
+
+        // Отображаем типы гемов
+        this.grid.forEach((row, y) => {
+            row.forEach((gemType, x) => {
+                if (gemType > 0) {
+                    const xPos = x * (elementWidth + elementSpacing) + elementWidth / 2;
+                    const yPos = y * (elementHeight + elementSpacing) + elementHeight / 2;
+                    console.log(`Creating text at ${xPos}, ${yPos} for gem type ${gemType}`);
+                    const text = this.add.text(
+                        xPos,
+                        yPos,
+                        gemType.toString(),
+                        { 
+                            fontSize: '16px', 
+                            fill: '#ffffff',
+                            backgroundColor: '#000000',
+                            padding: { x: 2, y: 2 }
+                        }
+                    ).setOrigin(0.5).setDepth(1000);
+                    this.gridTexts.push(text);
+                }
+            });
+        });
+    }
+
+    // Сохраняем состояние перед ходом
+    saveState() {
+        console.log('Saving state before move');
+        this.lastState = {
+            grid: this.grid.map(row => [...row]),
+            sprites: this.sprites.map(row => row.map(sprite => {
+                if (!sprite) return null;
+                return {
+                    x: sprite.x,
+                    y: sprite.y,
+                    texture: sprite.texture.key,
+                    visible: sprite.visible,
+                    type: parseInt(sprite.texture.key.replace('gem', ''))
+                };
+            }))
+        };
+        console.log('Saved state:', this.lastState);
+    }
+
+    // Отменяем последний ход
+    undoLastMove() {
+        console.log('Attempting to undo last move');
+        if (!this.lastState) {
+            console.log('No move to undo');
+            return;
+        }
+
+        console.log('Restoring state:', this.lastState);
+
+        // Восстанавливаем сетку
+        this.grid = this.lastState.grid.map(row => [...row]);
+        
+        // Перерисовываем все спрайты
+        this.rerenderGrid();
+
+        this.lastState = null; // Очищаем сохраненное состояние
+        console.log('State restored');
     }
 }
 

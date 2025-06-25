@@ -996,7 +996,7 @@ const MAX_CASCADE_ITERATIONS = 20;
 const DEFAULT_ANIMATION_DURATION = 300;
 
 // ✅ Функции делают одну вещь
-function createBombExplosion(x, y) {
+function createDynamiteExplosion(x, y) {
     return this.particleManager.createExplosion({
         position: { x, y },
         radius: 80,

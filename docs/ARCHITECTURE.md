@@ -210,7 +210,7 @@ class GemFactory {
     static createGem(type, x, y, scene) {
         switch(type) {
             case 1: return new BasicGem(x, y, scene, 'red');
-            case 6: return new BombGem(x, y, scene);
+
             case 9: return new DroneGem(x, y, scene);
             default: return new BasicGem(x, y, scene, 'default');
         }
@@ -224,7 +224,6 @@ class GemFactory {
 class SpecialGemStrategy {
     constructor() {
         this.strategies = {
-            6: new BombStrategy(),
             7: new VerticalBombStrategy(),
             8: new HorizontalBombStrategy(),
             9: new DroneStrategy(),

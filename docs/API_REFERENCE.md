@@ -162,22 +162,11 @@ await this.processMatchesAnimated();
 
 #### Special Gems
 
-##### `async explodeBomb(x, y)`
-Активация обычной бомбы.
-
-**Параметры:**
-- `x` (`number`) - координата X
-- `y` (`number`) - координата Y
-
-```javascript
-await this.explodeBomb(3, 4);
-```
-
 ##### `async activateVerticalBomb(x, y)`
 Активация вертикальной бомбы.
 
 ##### `async activateHorizontalBomb(x, y)`
-Активация горизонтальной бомбы.
+Активация горизонтальной линейной бомбы.
 
 ##### `async activateDrone(x, y)`
 Активация дрона (клик).
@@ -347,22 +336,11 @@ await this.delay(300); // Пауза 300ms
 ### Constants
 
 ```javascript
-const BOMB = 6;
 const VERTICAL_BOMB = 7;
 const HORIZONTAL_BOMB = 8;
 const DRONE = 9;
 const DISCO_BALL = 10;
 const DYNAMITE = 11;
-```
-
-### Bomb API
-
-##### `async explodeBomb(x, y)`
-Взрыв обычной бомбы в радиусе 3x3.
-
-```javascript
-// Активация бомбы на позиции (2, 3)
-await this.explodeBomb(2, 3);
 ```
 
 ### Line Bombs API

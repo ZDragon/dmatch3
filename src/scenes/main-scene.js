@@ -9,6 +9,8 @@ const ELEMENT_TYPES = 7;
 const BOMB = 6;
 const VERTICAL_BOMB = 7;
 const HORIZONTAL_BOMB = 8;
+const DRONE = 9;
+const DISCO_BALL = 10;
 const elementWidth = 64;
 const elementHeight = 64;
 const elementSpacing = 8;
@@ -94,6 +96,63 @@ export class MainScene extends Phaser.Scene {
         horizontalBombGraphics.fillRect(8, gemSize/2-4, gemSize-16, 8);
         horizontalBombGraphics.generateTexture('gem8', gemSize, gemSize);
         horizontalBombGraphics.destroy();
+
+        // Дрон
+        const droneGraphics = this.add.graphics();
+        droneGraphics.fillStyle(0x333333);
+        droneGraphics.fillRoundedRect(0, 0, gemSize, gemSize, 8);
+        droneGraphics.lineStyle(3, 0x00ccff);
+        droneGraphics.strokeRoundedRect(3, 3, gemSize-6, gemSize-6, 8);
+        
+        // Корпус дрона
+        droneGraphics.fillStyle(0x666666);
+        droneGraphics.fillEllipse(gemSize/2, gemSize/2, gemSize*0.6, gemSize*0.4);
+        
+        // Пропеллеры
+        droneGraphics.fillStyle(0x00ccff);
+        droneGraphics.fillCircle(gemSize*0.25, gemSize*0.25, 6);
+        droneGraphics.fillCircle(gemSize*0.75, gemSize*0.25, 6);
+        droneGraphics.fillCircle(gemSize*0.25, gemSize*0.75, 6);
+        droneGraphics.fillCircle(gemSize*0.75, gemSize*0.75, 6);
+        
+        // Центральный индикатор
+        droneGraphics.fillStyle(0xff4444);
+        droneGraphics.fillCircle(gemSize/2, gemSize/2, 4);
+        
+        droneGraphics.generateTexture('gem9', gemSize, gemSize);
+        droneGraphics.destroy();
+
+        // Дискошар
+        const discoBallGraphics = this.add.graphics();
+        discoBallGraphics.fillStyle(0x111111);
+        discoBallGraphics.fillRoundedRect(0, 0, gemSize, gemSize, 8);
+        discoBallGraphics.lineStyle(3, 0xffd700);
+        discoBallGraphics.strokeRoundedRect(3, 3, gemSize-6, gemSize-6, 8);
+        
+        // Основной шар
+        discoBallGraphics.fillStyle(0x444444);
+        discoBallGraphics.fillCircle(gemSize/2, gemSize/2, gemSize*0.35);
+        
+        // Блестящие квадратики на шаре (имитация зеркальных панелей)
+        const squares = 12;
+        for (let i = 0; i < squares; i++) {
+            const angle = (i / squares) * Math.PI * 2;
+            const radius = gemSize * 0.25;
+            const x = gemSize/2 + Math.cos(angle) * radius;
+            const y = gemSize/2 + Math.sin(angle) * radius;
+            
+            // Чередуем цвета для эффекта диско
+            const colors = [0xffd700, 0xff69b4, 0x00ffff, 0xff4500];
+            discoBallGraphics.fillStyle(colors[i % colors.length]);
+            discoBallGraphics.fillRect(x - 2, y - 2, 4, 4);
+        }
+        
+        // Центральный блик
+        discoBallGraphics.fillStyle(0xffffff);
+        discoBallGraphics.fillCircle(gemSize/2 - 4, gemSize/2 - 4, 3);
+        
+        discoBallGraphics.generateTexture('gem10', gemSize, gemSize);
+        discoBallGraphics.destroy();
     }
 
     create() {
@@ -553,6 +612,14 @@ export class MainScene extends Phaser.Scene {
                     sprite.on('pointerdown', () => {
                         this.activateHorizontalBomb(x, y);
                     });
+                } else if (gemType === DRONE) {
+                    sprite.on('pointerdown', () => {
+                        this.activateDrone(x, y);
+                    });
+                } else if (gemType === DISCO_BALL) {
+                    sprite.on('pointerdown', () => {
+                        this.activateDiscoBall(x, y);
+                    });
                 }
                 
                 row.push(sprite);
@@ -623,6 +690,12 @@ export class MainScene extends Phaser.Scene {
         } else if (gemType === HORIZONTAL_BOMB) {
             this.activateHorizontalBomb(x, y);
             return;
+        } else if (gemType === DRONE) {
+            this.activateDrone(x, y);
+            return;
+        } else if (gemType === DISCO_BALL) {
+            this.activateDiscoBall(x, y);
+            return;
         }
 
         if (this.selectedElement) {
@@ -630,18 +703,63 @@ export class MainScene extends Phaser.Scene {
             const dy = Math.abs(this.selectedElement.y - y);
             
             if ((dx === 1 && dy === 0) || (dx === 0 && dy === 1)) {
-                // Проверяем, создает ли ход валидные матчи
-                if (this.isValidMove(this.selectedElement, { x, y })) {
-                    const swapAction = {
-                        type: 'swap',
+                // Проверяем, есть ли дрон в выбранном элементе или целевом
+                const selectedGemType = this.grid[this.selectedElement.y][this.selectedElement.x];
+                const targetGemType = this.grid[y][x];
+                
+                if (selectedGemType === DRONE) {
+                    // Дрон сдвигается на соседнюю клетку - активируем его
+                    const droneAction = {
+                        type: 'drone_move',
                         from: this.selectedElement,
                         to: { x, y }
                     };
                     
-                    this.makeMove(this.selectedElement, { x, y });
-                    this.logAction(swapAction);
+                    this.activateDroneMove(this.selectedElement, { x, y });
+                    this.logAction(droneAction);
+                } else if (targetGemType === DRONE) {
+                    // Пытаемся сдвинуть на дрон - активируем дрон
+                    const droneAction = {
+                        type: 'drone_activate',
+                        position: { x, y }
+                    };
+                    
+                    this.activateDrone(x, y);
+                    this.logAction(droneAction);
+                } else if (selectedGemType === DISCO_BALL) {
+                    // Дискошар сдвигается на соседнюю клетку - активируем его
+                    const discoBallAction = {
+                        type: 'disco_ball_move',
+                        from: this.selectedElement,
+                        to: { x, y },
+                        targetColor: targetGemType
+                    };
+                    
+                    this.activateDiscoBallMove(this.selectedElement, { x, y });
+                    this.logAction(discoBallAction);
+                } else if (targetGemType === DISCO_BALL) {
+                    // Пытаемся сдвинуть на дискошар - активируем дискошар
+                    const discoBallAction = {
+                        type: 'disco_ball_activate',
+                        position: { x, y }
+                    };
+                    
+                    this.activateDiscoBall(x, y);
+                    this.logAction(discoBallAction);
                 } else {
-                    this.updateStatus('Недопустимый ход - не создает матчей!');
+                    // Обычная логика ходов
+                    if (this.isValidMove(this.selectedElement, { x, y })) {
+                        const swapAction = {
+                            type: 'swap',
+                            from: this.selectedElement,
+                            to: { x, y }
+                        };
+                        
+                        this.makeMove(this.selectedElement, { x, y });
+                        this.logAction(swapAction);
+                    } else {
+                        this.updateStatus('Недопустимый ход - не создает матчей!');
+                    }
                 }
             }
             
@@ -845,11 +963,17 @@ export class MainScene extends Phaser.Scene {
         this.grid.forEach((row, y) => {
             row.forEach((gemType, x) => {
                 if (gemType > 0) {
-                    this.sprites[y][x].destroy();
+                    // Проверяем, существует ли спрайт перед его удалением
+                    if (this.sprites[y][x] && this.sprites[y][x].destroy) {
+                        this.sprites[y][x].destroy();
+                    }
                     const sprite = this.createSprite(gemType, y, x, false);
                     this.sprites[y][x] = sprite;
                 } else {
-                    this.sprites[y][x].destroy();
+                    // Проверяем, существует ли спрайт перед его удалением
+                    if (this.sprites[y][x] && this.sprites[y][x].destroy) {
+                        this.sprites[y][x].destroy();
+                    }
                     this.sprites[y][x] = null;
                 }
             });
@@ -980,18 +1104,22 @@ export class MainScene extends Phaser.Scene {
         let bombToActivate = [];
         while (foundMatches && cascadeCount < 20) {
             const matches = this.detectMatchesDeterministic(this.grid);
-            // --- Сохраняем позиции для спец-гемов (матчи из 4 и 5) ---
-            const bombPositions = [];
-            const bombMatches = [];
+            const squares2x2 = this.detectSquares2x2(this.grid);
+            
+            // --- Сохраняем позиции для спец-гемов (матчи из 4 и 5, квадраты 2x2) ---
             const verticalBombPositions = [];
             const horizontalBombPositions = [];
+            const dronePositions = [];
+            const droneSquares = [];
+            const discoBallPositions = [];
+            const discoBallMatches = [];
 
             matches.forEach(match => {
                 if (Array.isArray(match)) {
                     if (match.length === 5) {
                         const {x, y} = match[0];
-                        bombPositions.push({x, y});
-                        bombMatches.push(match);
+                        discoBallPositions.push({x, y});
+                        discoBallMatches.push(match);
                     } else if (match.length === 4) {
                         // Проверяем, вертикальный или горизонтальный матч
                         const isVertical = match.every((pos, idx, arr) => 
@@ -1012,7 +1140,16 @@ export class MainScene extends Phaser.Scene {
                 }
             });
 
-            if (matches && matches.length > 0) {
+            // Обрабатываем квадраты 2x2 для создания дронов
+            squares2x2.forEach(square => {
+                if (Array.isArray(square) && square.length === 4) {
+                    const {x, y} = square[0]; // позиция для дрона (верхний левый угол)
+                    dronePositions.push({x, y});
+                    droneSquares.push(square);
+                }
+            });
+
+            if (matches && matches.length > 0 || squares2x2 && squares2x2.length > 0) {
                 console.log(`Каскад #${cascadeCount + 1}: найдено ${matches.length} матчей`);
                 this.sound.play('match', { volume: 0.5 });
 
@@ -1030,20 +1167,31 @@ export class MainScene extends Phaser.Scene {
                     }
                 });
 
-                // Обычная анимация для остальных матчей
-                const otherMatches = matches.filter(m => !bombMatches.includes(m) && (!Array.isArray(m) || m.length !== 4 || m.length !== 5));
-                if (otherMatches.length > 0) {
-                    // Фильтруем только актуальные матчи
-                    const validMatches = otherMatches.filter(match => this.isMatchStillValid(match));
-                    if (validMatches.length > 0) {
-                        await this.animateMatches(validMatches);
+                // Подсчитываем собранные камни из квадратов 2x2
+                squares2x2.forEach(square => {
+                    if (Array.isArray(square)) {
+                        square.forEach(({ x, y }) => {
+                            if (y >= 0 && y < this.grid.length && x >= 0 && x < this.grid[0].length) {
+                                const gemType = this.grid[y][x];
+                                if (gemType >= 1 && gemType <= 5) {
+                                    totalCollected[gemType]++;
+                                }
+                            }
+                        });
                     }
+                });
+
+
+                // Анимация для квадратов 2x2 (создание дронов)
+                for (const square of droneSquares) {
+                    await this.animateDroneCreation(square);
+                    this.grid[square[1].y][square[0].x] = DRONE;
                 }
 
-                // --- Кастомная анимация для матчей из 5 ---
-                for (const match of bombMatches) {
-                    await this.animateBombCreation(match);
-                    this.grid[match[0].y][match[0].x] = BOMB;
+                // Анимация для матчей из 5 (создание дискошаров)
+                for (const match of discoBallMatches) {
+                    await this.animateDiscoBallCreation(match);
+                    this.grid[match[0].y][match[0].x] = DISCO_BALL;
                 }
 
                 // Анимация для матчей из 4
@@ -1058,34 +1206,16 @@ export class MainScene extends Phaser.Scene {
                     }
                 }
 
-                // Проверяем, есть ли активные гемы рядом с матчами (автоактивация)
-                matches.forEach(match => {
-                    if (Array.isArray(match)) {
-                        match.forEach(({x, y}) => {
-                            // Проверяем, что в этой позиции есть обычный гем (1-5) и его спрайт видим
-                            if (this.grid[y][x] >= 1 && this.grid[y][x] <= 5 && 
-                                this.sprites[y][x] && this.sprites[y][x].visible) {
-                                this.getNeighbors(x, y).forEach(({nx, ny}) => {
-                                    if (this.grid[ny] && this.grid[ny][nx] === 6 && 
-                                        this.sprites[ny][nx] && this.sprites[ny][nx].visible) {
-                                        bombToActivate.push({x: nx, y: ny});
-                                    }
-                                });
-                            }
-                        });
+                // Обычная анимация для остальных матчей (исключаем матчи из 4 и 5)
+                const otherMatches = matches.filter(m => (!Array.isArray(m) || (m.length !== 4 && m.length !== 5)));
+                if (otherMatches.length > 0) {
+                    // Фильтруем только актуальные матчи
+                    const validMatches = otherMatches.filter(match => this.isMatchStillValid(match));
+                    if (validMatches.length > 0) {
+                        await this.animateMatches(validMatches);
                     }
-                });
-
-                bombToActivate = bombToActivate.filter((pos, idx, arr) => arr.findIndex(p => p.x === pos.x && p.y === pos.y) === idx);
-                if (bombToActivate.length > 0) {
-                    console.log('bombToActivate', bombToActivate);
-                    for (const bomb of bombToActivate) {
-                        await this.explodeBomb(bomb.x, bomb.y);
-                    }
-                    bombToActivate = [];
                 }
 
-                //debugger;
                 await this.animateGravity();
                 this.gameLogic.applyGravity(this.grid);
                 this.rerenderGrid();
@@ -1426,6 +1556,38 @@ export class MainScene extends Phaser.Scene {
         }
         
         return matches;
+    }
+
+    // Детекция квадратов 2x2 для создания дронов
+    detectSquares2x2(grid) {
+        const squares = [];
+        const rows = grid.length;
+        const cols = grid[0].length;
+        
+        for (let y = 0; y < rows - 1; y++) {
+            for (let x = 0; x < cols - 1; x++) {
+                const topLeft = grid[y][x];
+                const topRight = grid[y][x + 1];
+                const bottomLeft = grid[y + 1][x];
+                const bottomRight = grid[y + 1][x + 1];
+                
+                // Проверяем, что все 4 гема одинаковые и это обычные гемы (1-5)
+                if (topLeft >= 1 && topLeft <= 5 &&
+                    topLeft === topRight &&
+                    topLeft === bottomLeft &&
+                    topLeft === bottomRight) {
+                    
+                    squares.push([
+                        { x: x, y: y },         // top-left
+                        { x: x + 1, y: y },     // top-right
+                        { x: x, y: y + 1 },     // bottom-left
+                        { x: x + 1, y: y + 1 }  // bottom-right
+                    ]);
+                }
+            }
+        }
+        
+        return squares;
     }
 
     checkWinCondition() {
@@ -1874,7 +2036,7 @@ export class MainScene extends Phaser.Scene {
                     scaleX: 0.5,
                     scaleY: 0.5,
                     alpha: 0.7,
-                    duration: 300 + idx * 50,
+                    duration: 50 + idx * 50,
                     ease: 'Power2',
                     onComplete: () => {
                         this.tweens.add({
@@ -1937,7 +2099,7 @@ export class MainScene extends Phaser.Scene {
                     scaleX: 0.5,
                     scaleY: 0.5,
                     alpha: 0.7,
-                    duration: 300 + idx * 50,
+                    duration: 50 + idx * 50,
                     ease: 'Power2',
                     onComplete: () => {
                         this.tweens.add({
@@ -2121,6 +2283,393 @@ export class MainScene extends Phaser.Scene {
         await this.processMatchesAnimated();
     }
 
+    // Анимация создания дискошара из матча 5 элементов
+    async animateDiscoBallCreation(match) {
+        const target = match[0]; // позиция дискошара (первый элемент матча)
+        
+        // Удаляем спрайты всех гемов матча с анимацией
+        const animPromises = [];
+        match.forEach(({ x, y }) => {
+            if (this.sprites[y] && this.sprites[y][x]) {
+                animPromises.push(new Promise(resolve => {
+                    this.tweens.add({
+                        targets: this.sprites[y][x],
+                        scaleX: 0.1,
+                        scaleY: 0.1,
+                        alpha: 0.2,
+                        rotation: Math.PI * 4,
+                        duration: 400,
+                        ease: 'Power2.easeIn',
+                        onComplete: () => {
+                            if (this.sprites[y][x]) {
+                                this.sprites[y][x].destroy();
+                                this.sprites[y][x] = null;
+                            }
+                            resolve();
+                        }
+                    });
+                }));
+            }
+            this.grid[y][x] = 0;
+        });
+        
+        await Promise.all(animPromises);
+        
+        // Создаем спрайт дискошара в позиции первого элемента
+        const discoBall = this.createSprite(DISCO_BALL, target.y, target.x, true);
+        
+        // Анимация появления дискошара с блестящим эффектом
+        await new Promise(resolve => {
+            this.tweens.add({
+                targets: discoBall,
+                scaleX: 1.5,
+                scaleY: 1.5,
+                alpha: 1,
+                rotation: Math.PI * 2,
+                duration: 500,
+                ease: 'Back.easeOut',
+                onComplete: () => {
+                    this.tweens.add({
+                        targets: discoBall,
+                        scaleX: 1,
+                        scaleY: 1,
+                        duration: 300,
+                        ease: 'Elastic.easeOut',
+                        onComplete: resolve
+                    });
+                }
+            });
+        });
+    }
+
+    // Активация дискошара при клике
+    async activateDiscoBall(x, y) {
+        if (this.grid[y][x] !== DISCO_BALL) return;
+        
+        console.log(`Активация дискошара в позиции: ${x}, ${y}`);
+        
+        // Убираем ход
+        this.movesLeft--;
+        this.updateMovesDisplay();
+        
+        // Находим случайный гем рядом
+        const neighbors = this.getNeighbors(x, y).filter(({nx, ny}) => {
+            return this.grid[ny] && this.grid[ny][nx] >= 1 && this.grid[ny][nx] <= 5;
+        });
+        
+        if (neighbors.length === 0) {
+            console.log('Нет соседних гемов для активации дискошара');
+            // Удаляем дискошар без эффекта
+            await this.removeDiscoBall(x, y);
+            return;
+        }
+        
+        // Выбираем случайного соседа
+        const randomNeighbor = neighbors[this.getRandomTracked(0, neighbors.length - 1, `disco-neighbor-${x}-${y}`)];
+        const targetColor = this.grid[randomNeighbor.ny][randomNeighbor.nx];
+        
+        console.log(`Дискошар выбрал цвет: ${targetColor}`);
+        
+        // Убираем все гемы этого цвета
+        await this.removeAllGemsOfColor(targetColor, x, y);
+        
+        // Проверяем условие поражения
+        if (this.movesLeft <= 0) {
+            this.triggerGameOver();
+        }
+    }
+
+    // Активация дискошара при сдвигании
+    async activateDiscoBallMove(from, to) {
+        console.log(`Дискошар сдвигается с ${from.x}, ${from.y} на ${to.x}, ${to.y}`);
+        
+        // Убираем ход
+        this.movesLeft--;
+        this.updateMovesDisplay();
+        
+        const targetColor = this.grid[to.y][to.x];
+        
+        if (targetColor >= 1 && targetColor <= 5) {
+            console.log(`Дискошар выбрал цвет: ${targetColor}`);
+            
+            // Убираем все гемы этого цвета
+            await this.removeAllGemsOfColor(targetColor, from.x, from.y);
+        } else {
+            console.log('Целевая клетка не содержит обычный гем');
+            // Удаляем дискошар без эффекта
+            await this.removeDiscoBall(from.x, from.y);
+        }
+        
+        // Проверяем условие поражения
+        if (this.movesLeft <= 0) {
+            this.triggerGameOver();
+        }
+    }
+
+    // Удаляет все гемы указанного цвета с поля
+    async removeAllGemsOfColor(color, discoBallX, discoBallY) {
+        console.log(`Удаляем все гемы цвета ${color}`);
+        
+        const animPromises = [];
+        
+        // Сначала анимация самого дискошара
+        if (this.sprites[discoBallY][discoBallX]) {
+            animPromises.push(new Promise(resolve => {
+                this.tweens.add({
+                    targets: this.sprites[discoBallY][discoBallX],
+                    scaleX: 2,
+                    scaleY: 2,
+                    alpha: 0,
+                    rotation: Math.PI * 6,
+                    duration: 600,
+                    ease: 'Power2.easeOut',
+                    onComplete: () => {
+                        if (this.sprites[discoBallY][discoBallX]) {
+                            this.sprites[discoBallY][discoBallX].destroy();
+                        }
+                        resolve();
+                    }
+                });
+            }));
+        }
+        this.grid[discoBallY][discoBallX] = 0;
+        
+        // Затем анимация всех гемов указанного цвета
+        for (let y = 0; y < GRID_HEIGHT; y++) {
+            for (let x = 0; x < GRID_WIDTH; x++) {
+                if (this.grid[y][x] === color) {
+                    if (this.sprites[y][x]) {
+                        const delay = Math.sqrt((x - discoBallX) ** 2 + (y - discoBallY) ** 2) * 50; // задержка в зависимости от расстояния
+                        
+                        animPromises.push(new Promise(resolve => {
+                            this.time.delayedCall(delay, () => {
+                                if (this.sprites[y][x]) {
+                                    this.tweens.add({
+                                        targets: this.sprites[y][x],
+                                        scaleX: 0,
+                                        scaleY: 0,
+                                        alpha: 0,
+                                        rotation: Math.PI * 2,
+                                        duration: 250,
+                                        ease: 'Back.easeIn',
+                                        onComplete: () => {
+                                            if (this.sprites[y][x]) {
+                                                this.sprites[y][x].destroy();
+                                            }
+                                            resolve();
+                                        }
+                                    });
+                                } else {
+                                    resolve();
+                                }
+                            });
+                        }));
+                    }
+                    this.grid[y][x] = 0;
+                }
+            }
+        }
+        
+        // Ждём завершения всех анимаций
+        await Promise.all(animPromises);
+        
+        // Применяем физику и обрабатываем новые матчи
+        await this.animateGravity();
+        this.gameLogic.applyGravity(this.grid);
+        this.rerenderGrid();
+        this.customSpawnNewElements(this.grid, 0);
+        await this.animateNewElements();
+        await this.processMatchesAnimated();
+    }
+
+    // Простое удаление дискошара без эффекта
+    async removeDiscoBall(x, y) {
+        if (this.sprites[y][x]) {
+            this.sprites[y][x].destroy();
+        }
+        this.grid[y][x] = 0;
+        
+        await this.animateGravity();
+        this.gameLogic.applyGravity(this.grid);
+        this.rerenderGrid();
+        this.customSpawnNewElements(this.grid, 0);
+        await this.animateNewElements();
+    }
+
+    // Анимация создания дрона из квадрата 2x2
+    async animateDroneCreation(square) {
+        const target = square[0]; // позиция дрона (верхний левый угол)
+        
+        // Удаляем спрайты всех гемов квадрата с анимацией
+        const animPromises = [];
+        square.forEach(({ x, y }) => {
+            if (this.sprites[y] && this.sprites[y][x]) {
+                animPromises.push(new Promise(resolve => {
+                    this.tweens.add({
+                        targets: this.sprites[y][x],
+                        scaleX: 0.2,
+                        scaleY: 0.2,
+                        alpha: 0.3,
+                        duration: 300,
+                        ease: 'Power2.easeIn',
+                        onComplete: () => {
+                            if (this.sprites[y][x]) {
+                                this.sprites[y][x].destroy();
+                                this.sprites[y][x] = null;
+                            }
+                            resolve();
+                        }
+                    });
+                }));
+            }
+            this.grid[y][x] = 0;
+        });
+        
+        await Promise.all(animPromises);
+        
+        // Создаем спрайт дрона в позиции верхнего левого угла
+        const drone = this.createSprite(DRONE, target.y, target.x, true);
+        
+        // Анимация появления дрона
+        await new Promise(resolve => {
+            this.tweens.add({
+                targets: drone,
+                scaleX: 1.2,
+                scaleY: 1.2,
+                alpha: 1,
+                duration: 400,
+                ease: 'Back.easeOut',
+                onComplete: () => {
+                    this.tweens.add({
+                        targets: drone,
+                        scaleX: 1,
+                        scaleY: 1,
+                        duration: 200,
+                        ease: 'Power2.easeOut',
+                        onComplete: resolve
+                    });
+                }
+            });
+        });
+    }
+
+    // Активация дрона при клике
+    async activateDrone(x, y) {
+        if (this.grid[y][x] !== DRONE) return;
+        
+        console.log(`Активация дрона в позиции: ${x}, ${y}`);
+        
+        // Убираем ход
+        this.movesLeft--;
+        this.updateMovesDisplay();
+        
+        // Взрыв в радиусе 1 клетки
+        await this.explodeDroneArea(x, y);
+        
+        // Имитация полета к препятствиям (заглушка)
+        this.logAction({
+            type: 'drone_obstacle_attack',
+            position: { x, y },
+            message: 'Дрон атаковал случайное препятствие'
+        });
+        
+        console.log('Дрон атаковал препятствие (заглушка)');
+        
+        // Проверяем условие поражения
+        if (this.movesLeft <= 0) {
+            this.triggerGameOver();
+        }
+    }
+
+    // Активация дрона при сдвигании
+    async activateDroneMove(from, to) {
+        console.log(`Дрон сдвигается с ${from.x}, ${from.y} на ${to.x}, ${to.y}`);
+        
+        // Убираем ход
+        this.movesLeft--;
+        this.updateMovesDisplay();
+        
+        // Взрыв в радиусе 1 клетки от исходной позиции дрона
+        await this.explodeDroneArea(from.x, from.y);
+        
+        // Имитация полета к препятствиям (заглушка)
+        this.logAction({
+            type: 'drone_obstacle_attack',
+            position: from,
+            target: to,
+            message: 'Дрон переместился и атаковал случайное препятствие'
+        });
+        
+        console.log('Дрон переместился и атаковал препятствие (заглушка)');
+        
+        // Проверяем условие поражения
+        if (this.movesLeft <= 0) {
+            this.triggerGameOver();
+        }
+    }
+
+    // Взрыв дрона в радиусе 1 клетки
+    async explodeDroneArea(x, y) {
+        console.log(`Взрыв дрона в радиусе 1 от позиции: ${x}, ${y}`);
+        
+        // Анимация самого дрона
+        const animPromises = [];
+        if (this.sprites[y][x]) {
+            animPromises.push(new Promise(resolve => {
+                this.tweens.add({
+                    targets: this.sprites[y][x],
+                    scaleX: 1.8,
+                    scaleY: 1.8,
+                    alpha: 0,
+                    duration: 400,
+                    ease: 'Back.easeIn',
+                    onComplete: () => {
+                        if (this.sprites[y][x]) this.sprites[y][x].destroy();
+                        resolve();
+                    }
+                });
+            }));
+        }
+        
+        this.grid[y][x] = 0;
+        
+        // Взрываем все гемы в радиусе 1 клетки (8 соседей)
+        const neighbors = this.getNeighbors(x, y);
+        neighbors.forEach(({ nx, ny }) => {
+            if (this.grid[ny] && this.grid[ny][nx] && this.grid[ny][nx] >= 1 && this.grid[ny][nx] <= 5) {
+                if (this.sprites[ny][nx]) {
+                    animPromises.push(new Promise(resolve => {
+                        this.tweens.add({
+                            targets: this.sprites[ny][nx],
+                            scaleX: 0,
+                            scaleY: 0,
+                            alpha: 0,
+                            rotation: Math.PI * 2,
+                            duration: 300,
+                            ease: 'Back.easeIn',
+                            onComplete: () => {
+                                if (this.sprites[ny][nx]) this.sprites[ny][nx].destroy();
+                                resolve();
+                            }
+                        });
+                    }));
+                }
+                this.grid[ny][nx] = 0;
+            }
+        });
+        
+        // Ждём завершения всех анимаций
+        await Promise.all(animPromises);
+        
+        // Применяем физику и обрабатываем матчи
+        await this.animateGravity();
+        this.gameLogic.applyGravity(this.grid);
+        this.rerenderGrid();
+        this.customSpawnNewElements(this.grid, 0);
+        await this.animateNewElements();
+        await this.processMatchesAnimated();
+    }
+
     createSprite(gemType, row, col, invisible = false) {
         // Уничтожаем старый спрайт, если он существует
         if (this.sprites[row][col]) {
@@ -2148,6 +2697,14 @@ export class MainScene extends Phaser.Scene {
             if (gemType === 6) {
                 sprite.on('pointerdown', () => {
                     this.explodeBomb(col, row);
+                });
+            } else if (gemType === DRONE) {
+                sprite.on('pointerdown', () => {
+                    this.activateDrone(col, row);
+                });
+            } else if (gemType === DISCO_BALL) {
+                sprite.on('pointerdown', () => {
+                    this.activateDiscoBall(col, row);
                 });
             }
             this.sprites[row][col] = sprite;

@@ -11,6 +11,7 @@ const VERTICAL_BOMB = 7;
 const HORIZONTAL_BOMB = 8;
 const DRONE = 9;
 const DISCO_BALL = 10;
+const DYNAMITE = 11;
 const elementWidth = 64;
 const elementHeight = 64;
 const elementSpacing = 8;
@@ -153,6 +154,42 @@ export class MainScene extends Phaser.Scene {
         
         discoBallGraphics.generateTexture('gem10', gemSize, gemSize);
         discoBallGraphics.destroy();
+
+        // Динамит
+        const dynamiteGraphics = this.add.graphics();
+        dynamiteGraphics.fillStyle(0x8B4513);
+        dynamiteGraphics.fillRoundedRect(0, 0, gemSize, gemSize, 8);
+        dynamiteGraphics.lineStyle(3, 0xFF4500);
+        dynamiteGraphics.strokeRoundedRect(3, 3, gemSize-6, gemSize-6, 8);
+        
+        // Основной корпус динамита (цилиндр)
+        dynamiteGraphics.fillStyle(0xFF4500);
+        dynamiteGraphics.fillRect(gemSize*0.3, gemSize*0.2, gemSize*0.4, gemSize*0.6);
+        
+        // Полоски на динамите
+        dynamiteGraphics.fillStyle(0x8B0000);
+        dynamiteGraphics.fillRect(gemSize*0.3, gemSize*0.35, gemSize*0.4, 3);
+        dynamiteGraphics.fillRect(gemSize*0.3, gemSize*0.5, gemSize*0.4, 3);
+        dynamiteGraphics.fillRect(gemSize*0.3, gemSize*0.65, gemSize*0.4, 3);
+        
+        // Фитиль
+        dynamiteGraphics.fillStyle(0x000000);
+        dynamiteGraphics.fillRect(gemSize*0.48, gemSize*0.1, 2, gemSize*0.15);
+        
+        // Искры на фитиле
+        dynamiteGraphics.fillStyle(0xFFD700);
+        dynamiteGraphics.fillCircle(gemSize*0.49, gemSize*0.08, 2);
+        dynamiteGraphics.fillStyle(0xFF6347);
+        dynamiteGraphics.fillCircle(gemSize*0.47, gemSize*0.06, 1.5);
+        dynamiteGraphics.fillCircle(gemSize*0.51, gemSize*0.05, 1);
+        
+        // Предупреждающие символы
+        dynamiteGraphics.fillStyle(0xFFFF00);
+        dynamiteGraphics.fillRect(gemSize*0.15, gemSize*0.4, 6, 6);
+        dynamiteGraphics.fillRect(gemSize*0.73, gemSize*0.4, 6, 6);
+        
+        dynamiteGraphics.generateTexture('gem11', gemSize, gemSize);
+        dynamiteGraphics.destroy();
     }
 
     create() {
@@ -940,12 +977,43 @@ export class MainScene extends Phaser.Scene {
         // Анимация обмена элементов
         await this.animateSwap(from, to);
         
+        // Проверяем, есть ли специальные гемы для активации при перемещении
+        const fromGem = this.grid[from.y][from.x];
+        const toGem = this.grid[to.y][to.x];
+        
         // Выполняем логический обмен
         const temp = this.grid[from.y][from.x];
         this.grid[from.y][from.x] = this.grid[to.y][to.x];
         this.grid[to.y][to.x] = temp;
 
         this.updateGridOverlay();
+
+        // Проверяем активацию спец гемов при перемещении
+        if (fromGem === DRONE) {
+            await this.activateDroneMove(from, to);
+            this.isAnimating = false;
+            return;
+        } else if (toGem === DRONE) {
+            await this.activateDroneMove(to, from);
+            this.isAnimating = false;
+            return;
+        } else if (fromGem === DISCO_BALL) {
+            await this.activateDiscoBallMove(from, to);
+            this.isAnimating = false;
+            return;
+        } else if (toGem === DISCO_BALL) {
+            await this.activateDiscoBallMove(to, from);
+            this.isAnimating = false;
+            return;
+        } else if (fromGem === DYNAMITE) {
+            await this.activateDynamiteMove(from, to);
+            this.isAnimating = false;
+            return;
+        } else if (toGem === DYNAMITE) {
+            await this.activateDynamiteMove(to, from);
+            this.isAnimating = false;
+            return;
+        }
 
         // Обрабатываем матчи с анимацией
         await this.processMatchesAnimated();
@@ -1105,6 +1173,8 @@ export class MainScene extends Phaser.Scene {
         while (foundMatches && cascadeCount < 20) {
             const matches = this.detectMatchesDeterministic(this.grid);
             const squares2x2 = this.detectSquares2x2(this.grid);
+            const tShapes = this.detectTShapes(this.grid);
+            const lShapes = this.detectLShapes(this.grid);
             
             // --- Сохраняем позиции для спец-гемов (матчи из 4 и 5, квадраты 2x2) ---
             const verticalBombPositions = [];
@@ -1113,6 +1183,8 @@ export class MainScene extends Phaser.Scene {
             const droneSquares = [];
             const discoBallPositions = [];
             const discoBallMatches = [];
+            const dynamitePositions = [];
+            const dynamiteShapes = [];
 
             matches.forEach(match => {
                 if (Array.isArray(match)) {
@@ -1149,7 +1221,28 @@ export class MainScene extends Phaser.Scene {
                 }
             });
 
-            if (matches && matches.length > 0 || squares2x2 && squares2x2.length > 0) {
+            // Обрабатываем T-образные фигуры для создания динамита
+            tShapes.forEach(shape => {
+                if (Array.isArray(shape) && shape.length === 5) {
+                    // Находим центральную позицию фигуры для размещения динамита
+                    let centerX = Math.round(shape.reduce((sum, pos) => sum + pos.x, 0) / shape.length);
+                    let centerY = Math.round(shape.reduce((sum, pos) => sum + pos.y, 0) / shape.length);
+                    dynamitePositions.push({x: centerX, y: centerY});
+                    dynamiteShapes.push(shape);
+                }
+            });
+
+            // Обрабатываем L-образные фигуры для создания динамита
+            lShapes.forEach(shape => {
+                if (Array.isArray(shape) && shape.length === 5) {
+                    // Находим угловую позицию фигуры для размещения динамита (обычно первый элемент)
+                    const {x, y} = shape[0];
+                    dynamitePositions.push({x, y});
+                    dynamiteShapes.push(shape);
+                }
+            });
+
+            if (matches && matches.length > 0 || squares2x2 && squares2x2.length > 0 || tShapes && tShapes.length > 0 || lShapes && lShapes.length > 0) {
                 console.log(`Каскад #${cascadeCount + 1}: найдено ${matches.length} матчей`);
                 this.sound.play('match', { volume: 0.5 });
 
@@ -1181,11 +1274,47 @@ export class MainScene extends Phaser.Scene {
                     }
                 });
 
+                // Подсчитываем собранные камни из T-образных фигур
+                tShapes.forEach(shape => {
+                    if (Array.isArray(shape)) {
+                        shape.forEach(({ x, y }) => {
+                            if (y >= 0 && y < this.grid.length && x >= 0 && x < this.grid[0].length) {
+                                const gemType = this.grid[y][x];
+                                if (gemType >= 1 && gemType <= 5) {
+                                    totalCollected[gemType]++;
+                                }
+                            }
+                        });
+                    }
+                });
+
+                // Подсчитываем собранные камни из L-образных фигур
+                lShapes.forEach(shape => {
+                    if (Array.isArray(shape)) {
+                        shape.forEach(({ x, y }) => {
+                            if (y >= 0 && y < this.grid.length && x >= 0 && x < this.grid[0].length) {
+                                const gemType = this.grid[y][x];
+                                if (gemType >= 1 && gemType <= 5) {
+                                    totalCollected[gemType]++;
+                                }
+                            }
+                        });
+                    }
+                });
+
 
                 // Анимация для квадратов 2x2 (создание дронов)
                 for (const square of droneSquares) {
                     await this.animateDroneCreation(square);
                     this.grid[square[1].y][square[0].x] = DRONE;
+                }
+
+                // Анимация для T и L фигур (создание динамита)
+                for (let i = 0; i < dynamiteShapes.length; i++) {
+                    const shape = dynamiteShapes[i];
+                    const position = dynamitePositions[i];
+                    await this.animateDynamiteCreation(shape);
+                    this.grid[position.y][position.x] = DYNAMITE;
                 }
 
                 // Анимация для матчей из 5 (создание дискошаров)
@@ -1588,6 +1717,198 @@ export class MainScene extends Phaser.Scene {
         }
         
         return squares;
+    }
+
+    // Детекция T-образных паттернов для создания динамита
+    detectTShapes(grid) {
+        const tShapes = [];
+        const rows = grid.length;
+        const cols = grid[0].length;
+        
+        for (let y = 0; y < rows; y++) {
+            for (let x = 0; x < cols; x++) {
+                const gem = grid[y][x];
+                if (!gem || gem < 1 || gem > 5) continue;
+                
+                // T-образная фигура: 3 гема сверху + 2 гема снизу по центру
+                if (x >= 1 && x < cols - 1 && y < rows - 2) {
+                    const topLeft = grid[y][x - 1];
+                    const topCenter = grid[y][x];
+                    const topRight = grid[y][x + 1];
+                    const bottomCenter1 = grid[y + 1][x];
+                    const bottomCenter2 = grid[y + 2][x];
+                    
+                    if (topLeft === gem && topCenter === gem && topRight === gem &&
+                        bottomCenter1 === gem && bottomCenter2 === gem) {
+                        tShapes.push([
+                            { x: x - 1, y: y },
+                            { x: x, y: y },
+                            { x: x + 1, y: y },
+                            { x: x, y: y + 1 },
+                            { x: x, y: y + 2 }
+                        ]);
+                    }
+                }
+                
+                // Перевернутая T-образная фигура: 2 гема сверху по центру + 3 гема снизу
+                if (x >= 1 && x < cols - 1 && y >= 2) {
+                    const topCenter1 = grid[y - 2][x];
+                    const topCenter2 = grid[y - 1][x];
+                    const bottomLeft = grid[y][x - 1];
+                    const bottomCenter = grid[y][x];
+                    const bottomRight = grid[y][x + 1];
+                    
+                    if (topCenter1 === gem && topCenter2 === gem &&
+                        bottomLeft === gem && bottomCenter === gem && bottomRight === gem) {
+                        tShapes.push([
+                            { x: x, y: y - 2 },
+                            { x: x, y: y - 1 },
+                            { x: x - 1, y: y },
+                            { x: x, y: y },
+                            { x: x + 1, y: y }
+                        ]);
+                    }
+                }
+                
+                // Боковая T-образная фигура слева: 3 гема по вертикали + 2 гема справа
+                if (x < cols - 2 && y >= 1 && y < rows - 1) {
+                    const leftTop = grid[y - 1][x];
+                    const leftCenter = grid[y][x];
+                    const leftBottom = grid[y + 1][x];
+                    const rightCenter1 = grid[y][x + 1];
+                    const rightCenter2 = grid[y][x + 2];
+                    
+                    if (leftTop === gem && leftCenter === gem && leftBottom === gem &&
+                        rightCenter1 === gem && rightCenter2 === gem) {
+                        tShapes.push([
+                            { x: x, y: y - 1 },
+                            { x: x, y: y },
+                            { x: x, y: y + 1 },
+                            { x: x + 1, y: y },
+                            { x: x + 2, y: y }
+                        ]);
+                    }
+                }
+                
+                // Боковая T-образная фигура справа: 2 гема слева + 3 гема по вертикали
+                if (x >= 2 && y >= 1 && y < rows - 1) {
+                    const leftCenter1 = grid[y][x - 2];
+                    const leftCenter2 = grid[y][x - 1];
+                    const rightTop = grid[y - 1][x];
+                    const rightCenter = grid[y][x];
+                    const rightBottom = grid[y + 1][x];
+                    
+                    if (leftCenter1 === gem && leftCenter2 === gem &&
+                        rightTop === gem && rightCenter === gem && rightBottom === gem) {
+                        tShapes.push([
+                            { x: x - 2, y: y },
+                            { x: x - 1, y: y },
+                            { x: x, y: y - 1 },
+                            { x: x, y: y },
+                            { x: x, y: y + 1 }
+                        ]);
+                    }
+                }
+            }
+        }
+        
+        return tShapes;
+    }
+
+    // Детекция L-образных паттернов для создания динамита
+    detectLShapes(grid) {
+        const lShapes = [];
+        const rows = grid.length;
+        const cols = grid[0].length;
+        
+        for (let y = 0; y < rows; y++) {
+            for (let x = 0; x < cols; x++) {
+                const gem = grid[y][x];
+                if (!gem || gem < 1 || gem > 5) continue;
+                
+                // L-образная фигура: 3 гема вертикально + 2 гема сверху справа
+                if (x < cols - 2 && y < rows - 2) {
+                    const vertical1 = grid[y][x];
+                    const vertical2 = grid[y + 1][x];
+                    const vertical3 = grid[y + 2][x];
+                    const horizontal1 = grid[y][x + 1];
+                    const horizontal2 = grid[y][x + 2];
+                    
+                    if (vertical1 === gem && vertical2 === gem && vertical3 === gem &&
+                        horizontal1 === gem && horizontal2 === gem) {
+                        lShapes.push([
+                            { x: x, y: y },
+                            { x: x, y: y + 1 },
+                            { x: x, y: y + 2 },
+                            { x: x + 1, y: y },
+                            { x: x + 2, y: y }
+                        ]);
+                    }
+                }
+                
+                // L-образная фигура: 3 гема вертикально + 2 гема сверху слева
+                if (x >= 2 && y < rows - 2) {
+                    const vertical1 = grid[y][x];
+                    const vertical2 = grid[y + 1][x];
+                    const vertical3 = grid[y + 2][x];
+                    const horizontal1 = grid[y][x - 1];
+                    const horizontal2 = grid[y][x - 2];
+                    
+                    if (vertical1 === gem && vertical2 === gem && vertical3 === gem &&
+                        horizontal1 === gem && horizontal2 === gem) {
+                        lShapes.push([
+                            { x: x, y: y },
+                            { x: x, y: y + 1 },
+                            { x: x, y: y + 2 },
+                            { x: x - 1, y: y },
+                            { x: x - 2, y: y }
+                        ]);
+                    }
+                }
+                
+                // L-образная фигура: 3 гема вертикально + 2 гема снизу справа
+                if (x < cols - 2 && y >= 2) {
+                    const vertical1 = grid[y - 2][x];
+                    const vertical2 = grid[y - 1][x];
+                    const vertical3 = grid[y][x];
+                    const horizontal1 = grid[y][x + 1];
+                    const horizontal2 = grid[y][x + 2];
+                    
+                    if (vertical1 === gem && vertical2 === gem && vertical3 === gem &&
+                        horizontal1 === gem && horizontal2 === gem) {
+                        lShapes.push([
+                            { x: x, y: y - 2 },
+                            { x: x, y: y - 1 },
+                            { x: x, y: y },
+                            { x: x + 1, y: y },
+                            { x: x + 2, y: y }
+                        ]);
+                    }
+                }
+                
+                // L-образная фигура: 3 гема вертикально + 2 гема снизу слева
+                if (x >= 2 && y >= 2) {
+                    const vertical1 = grid[y - 2][x];
+                    const vertical2 = grid[y - 1][x];
+                    const vertical3 = grid[y][x];
+                    const horizontal1 = grid[y][x - 1];
+                    const horizontal2 = grid[y][x - 2];
+                    
+                    if (vertical1 === gem && vertical2 === gem && vertical3 === gem &&
+                        horizontal1 === gem && horizontal2 === gem) {
+                        lShapes.push([
+                            { x: x, y: y - 2 },
+                            { x: x, y: y - 1 },
+                            { x: x, y: y },
+                            { x: x - 1, y: y },
+                            { x: x - 2, y: y }
+                        ]);
+                    }
+                }
+            }
+        }
+        
+        return lShapes;
     }
 
     checkWinCondition() {
@@ -2670,6 +2991,208 @@ export class MainScene extends Phaser.Scene {
         await this.processMatchesAnimated();
     }
 
+    // Анимация создания динамита
+    async animateDynamiteCreation(shape) {
+        const animPromises = [];
+        
+        // Анимация исчезновения всех гемов в фигуре
+        shape.forEach(({ x, y }) => {
+            if (this.sprites[y] && this.sprites[y][x]) {
+                animPromises.push(new Promise(resolve => {
+                    this.tweens.add({
+                        targets: this.sprites[y][x],
+                        scaleX: 0,
+                        scaleY: 0,
+                        alpha: 0,
+                        rotation: Math.PI,
+                        duration: 400,
+                        ease: 'Back.easeIn',
+                        onComplete: () => {
+                            if (this.sprites[y][x]) {
+                                this.sprites[y][x].destroy();
+                                this.sprites[y][x] = null;
+                            }
+                            this.grid[y][x] = 0;
+                            resolve();
+                        }
+                    });
+                }));
+            }
+        });
+        
+        await Promise.all(animPromises);
+        await this.delay(200);
+        
+        // Создаём динамит в центральной позиции с эффектной анимацией
+        const centerX = Math.round(shape.reduce((sum, pos) => sum + pos.x, 0) / shape.length);
+        const centerY = Math.round(shape.reduce((sum, pos) => sum + pos.y, 0) / shape.length);
+        
+        // Эффект взрыва-появления
+        const explosion = this.add.circle(
+            centerX * (elementWidth + elementSpacing) + elementWidth / 2,
+            centerY * (elementHeight + elementSpacing) + elementHeight / 2,
+            5,
+            0xFF4500
+        );
+        explosion.setDepth(10);
+        
+        return new Promise(resolve => {
+            this.tweens.add({
+                targets: explosion,
+                radius: 40,
+                alpha: 0,
+                duration: 300,
+                ease: 'Power2',
+                onComplete: () => {
+                    explosion.destroy();
+                    
+                    // Создаём спрайт динамита с появлением
+                    const dynamiteSprite = this.createSprite(DYNAMITE, centerY, centerX, true);
+                    
+                    this.tweens.add({
+                        targets: dynamiteSprite,
+                        scaleX: 1,
+                        scaleY: 1,
+                        alpha: 1,
+                        duration: 300,
+                        ease: 'Back.easeOut',
+                        onComplete: resolve
+                    });
+                }
+            });
+        });
+    }
+
+    // Активация динамита при клике
+    async activateDynamite(x, y) {
+        console.log(`Активация динамита на позиции: ${x}, ${y}`);
+        this.logAction({
+            type: 'ACTIVATE_DYNAMITE',
+            data: { x, y },
+            randomContext: 'dynamite_activation'
+        });
+
+        await this.explodeDynamiteArea(x, y);
+    }
+
+    // Активация динамита при перемещении
+    async activateDynamiteMove(from, to) {
+        console.log(`Перемещение и активация динамита: ${from.x},${from.y} -> ${to.x},${to.y}`);
+        this.logAction({
+            type: 'ACTIVATE_DYNAMITE_MOVE',
+            data: { from, to },
+            randomContext: 'dynamite_move_activation'
+        });
+
+        // Перемещаем динамит
+        this.grid[to.y][to.x] = DYNAMITE;
+        this.grid[from.y][from.x] = 0;
+        
+        await this.explodeDynamiteArea(to.x, to.y);
+    }
+
+    // Взрыв динамита в радиусе 2 клеток
+    async explodeDynamiteArea(x, y) {
+        console.log(`Взрыв динамита в радиусе 2 от позиции: ${x}, ${y}`);
+        
+        // Анимация самого динамита с мощным взрывом
+        const animPromises = [];
+        if (this.sprites[y][x]) {
+            // Создаём эффект взрыва
+            const explosionEffect = this.add.circle(
+                x * (elementWidth + elementSpacing) + elementWidth / 2,
+                y * (elementHeight + elementSpacing) + elementHeight / 2,
+                10,
+                0xFF4500
+            );
+            explosionEffect.setDepth(15);
+            
+            animPromises.push(new Promise(resolve => {
+                this.tweens.add({
+                    targets: explosionEffect,
+                    radius: 80,
+                    alpha: 0,
+                    duration: 600,
+                    ease: 'Power2',
+                    onComplete: () => {
+                        explosionEffect.destroy();
+                        resolve();
+                    }
+                });
+            }));
+            
+            animPromises.push(new Promise(resolve => {
+                this.tweens.add({
+                    targets: this.sprites[y][x],
+                    scaleX: 2.5,
+                    scaleY: 2.5,
+                    alpha: 0,
+                    duration: 500,
+                    ease: 'Power2',
+                    onComplete: () => {
+                        if (this.sprites[y][x]) this.sprites[y][x].destroy();
+                        resolve();
+                    }
+                });
+            }));
+        }
+        
+        this.grid[y][x] = 0;
+        
+        // Взрываем все гемы в радиусе 2 клеток
+        for (let dy = -2; dy <= 2; dy++) {
+            for (let dx = -2; dx <= 2; dx++) {
+                if (dx === 0 && dy === 0) continue; // Пропускаем центр (сам динамит)
+                
+                const nx = x + dx;
+                const ny = y + dy;
+                
+                if (nx >= 0 && nx < this.gameLogic.gridWidth && 
+                    ny >= 0 && ny < this.gameLogic.gridHeight) {
+                    
+                    const gemType = this.grid[ny][nx];
+                    if (gemType >= 1 && gemType <= 5) {
+                        if (this.sprites[ny][nx]) {
+                            const delay = Math.abs(dx) + Math.abs(dy); // Задержка на основе расстояния
+                            animPromises.push(new Promise(resolve => {
+                                this.time.delayedCall(delay * 50, () => {
+                                    this.tweens.add({
+                                        targets: this.sprites[ny][nx],
+                                        scaleX: 0,
+                                        scaleY: 0,
+                                        alpha: 0,
+                                        rotation: Math.PI * 2,
+                                        duration: 400,
+                                        ease: 'Back.easeIn',
+                                        onComplete: () => {
+                                            if (this.sprites[ny][nx]) this.sprites[ny][nx].destroy();
+                                            resolve();
+                                        }
+                                    });
+                                });
+                            }));
+                        }
+                        this.grid[ny][nx] = 0;
+                    }
+                    
+                    // TODO: Здесь будет логика снятия уровня у препятствий
+                    console.log(`Потенциальное повреждение препятствия на ${nx}, ${ny}`);
+                }
+            }
+        }
+        
+        // Ждём завершения всех анимаций
+        await Promise.all(animPromises);
+        
+        // Применяем физику и обрабатываем матчи
+        await this.animateGravity();
+        this.gameLogic.applyGravity(this.grid);
+        this.rerenderGrid();
+        this.customSpawnNewElements(this.grid, 0);
+        await this.animateNewElements();
+        await this.processMatchesAnimated();
+    }
+
     createSprite(gemType, row, col, invisible = false) {
         // Уничтожаем старый спрайт, если он существует
         if (this.sprites[row][col]) {
@@ -2705,6 +3228,10 @@ export class MainScene extends Phaser.Scene {
             } else if (gemType === DISCO_BALL) {
                 sprite.on('pointerdown', () => {
                     this.activateDiscoBall(col, row);
+                });
+            } else if (gemType === DYNAMITE) {
+                sprite.on('pointerdown', () => {
+                    this.activateDynamite(col, row);
                 });
             }
             this.sprites[row][col] = sprite;

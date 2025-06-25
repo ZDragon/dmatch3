@@ -1150,201 +1150,44 @@ export class MainScene extends Phaser.Scene {
         let foundMatches = true;
         let cascadeCount = 0;
         let totalCollected = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-        let bombToActivate = [];
+
         while (foundMatches && cascadeCount < 20) {
-            const matches = this.detectMatchesDeterministic(this.grid);
-            const squares2x2 = this.detectSquares2x2(this.grid);
-            const tShapes = this.detectTShapes(this.grid);
-            const lShapes = this.detectLShapes(this.grid);
+            console.log(`\n=== Каскад #${cascadeCount + 1} ===`);
             
-            // --- Сохраняем позиции для спец-гемов (матчи из 4 и 5, квадраты 2x2) ---
-            const verticalBombPositions = [];
-            const horizontalBombPositions = [];
-            const dronePositions = [];
-            const droneSquares = [];
-            const discoBallPositions = [];
-            const discoBallMatches = [];
-            const dynamitePositions = [];
-            const dynamiteShapes = [];
-
-            matches.forEach(match => {
-                if (Array.isArray(match)) {
-                    if (match.length === 5) {
-                        const {x, y} = match[0];
-                        discoBallPositions.push({x, y});
-                        discoBallMatches.push(match);
-                    } else if (match.length === 4) {
-                        // Проверяем, вертикальный или горизонтальный матч
-                        const isVertical = match.every((pos, idx, arr) => 
-                            idx === 0 || pos.x === arr[0].x
-                        );
-                        const isHorizontal = match.every((pos, idx, arr) => 
-                            idx === 0 || pos.y === arr[0].y
-                        );
-                        
-                        if (isVertical) {
-                            const {x, y} = match[0];
-                            verticalBombPositions.push({x, y});
-                        } else if (isHorizontal) {
-                            const {x, y} = match[0];
-                            horizontalBombPositions.push({x, y});
-                        }
-                    }
-                }
-            });
-
-            // Обрабатываем квадраты 2x2 для создания дронов
-            squares2x2.forEach(square => {
-                if (Array.isArray(square) && square.length === 4) {
-                    const {x, y} = square[0]; // позиция для дрона (верхний левый угол)
-                    dronePositions.push({x, y});
-                    droneSquares.push(square);
-                }
-            });
-
-            // Обрабатываем T-образные фигуры для создания динамита
-            tShapes.forEach(shape => {
-                if (Array.isArray(shape) && shape.length === 5) {
-                    // Находим центральную позицию фигуры для размещения динамита
-                    let centerX = Math.round(shape.reduce((sum, pos) => sum + pos.x, 0) / shape.length);
-                    let centerY = Math.round(shape.reduce((sum, pos) => sum + pos.y, 0) / shape.length);
-                    dynamitePositions.push({x: centerX, y: centerY});
-                    dynamiteShapes.push(shape);
-                }
-            });
-
-            // Обрабатываем L-образные фигуры для создания динамита
-            lShapes.forEach(shape => {
-                if (Array.isArray(shape) && shape.length === 5) {
-                    // Находим угловую позицию фигуры для размещения динамита (обычно первый элемент)
-                    const {x, y} = shape[0];
-                    dynamitePositions.push({x, y});
-                    dynamiteShapes.push(shape);
-                }
-            });
-
-            if (matches && matches.length > 0 || squares2x2 && squares2x2.length > 0 || tShapes && tShapes.length > 0 || lShapes && lShapes.length > 0) {
-                console.log(`Каскад #${cascadeCount + 1}: найдено ${matches.length} матчей`);
-                this.sound.play('match', { volume: 0.5 });
-
-                // Подсчитываем собранные камни
-                matches.forEach((match, matchIndex) => {
-                    if (Array.isArray(match)) {
-                        match.forEach(({ x, y }) => {
-                            if (y >= 0 && y < this.grid.length && x >= 0 && x < this.grid[0].length) {
-                                const gemType = this.grid[y][x];
-                                if (gemType >= 1 && gemType <= 5) {
-                                    totalCollected[gemType]++;
-                                }
-                            }
-                        });
-                    }
-                });
-
-                // Подсчитываем собранные камни из квадратов 2x2
-                squares2x2.forEach(square => {
-                    if (Array.isArray(square)) {
-                        square.forEach(({ x, y }) => {
-                            if (y >= 0 && y < this.grid.length && x >= 0 && x < this.grid[0].length) {
-                                const gemType = this.grid[y][x];
-                                if (gemType >= 1 && gemType <= 5) {
-                                    totalCollected[gemType]++;
-                                }
-                            }
-                        });
-                    }
-                });
-
-                // Подсчитываем собранные камни из T-образных фигур
-                tShapes.forEach(shape => {
-                    if (Array.isArray(shape)) {
-                        shape.forEach(({ x, y }) => {
-                            if (y >= 0 && y < this.grid.length && x >= 0 && x < this.grid[0].length) {
-                                const gemType = this.grid[y][x];
-                                if (gemType >= 1 && gemType <= 5) {
-                                    totalCollected[gemType]++;
-                                }
-                            }
-                        });
-                    }
-                });
-
-                // Подсчитываем собранные камни из L-образных фигур
-                lShapes.forEach(shape => {
-                    if (Array.isArray(shape)) {
-                        shape.forEach(({ x, y }) => {
-                            if (y >= 0 && y < this.grid.length && x >= 0 && x < this.grid[0].length) {
-                                const gemType = this.grid[y][x];
-                                if (gemType >= 1 && gemType <= 5) {
-                                    totalCollected[gemType]++;
-                                }
-                            }
-                        });
-                    }
-                });
-
-
-                // Анимация для квадратов 2x2 (создание дронов)
-                for (const square of droneSquares) {
-                    await this.animateDroneCreation(square);
-                    this.grid[square[1].y][square[0].x] = DRONE;
-                }
-
-                // Анимация для T и L фигур (создание динамита)
-                for (let i = 0; i < dynamiteShapes.length; i++) {
-                    const shape = dynamiteShapes[i];
-                    const position = dynamitePositions[i];
-                    await this.animateDynamiteCreation(shape);
-                    this.grid[position.y][position.x] = DYNAMITE;
-                }
-
-                // Анимация для матчей из 5 (создание дискошаров)
-                for (const match of discoBallMatches) {
-                    await this.animateDiscoBallCreation(match);
-                    this.grid[match[0].y][match[0].x] = DISCO_BALL;
-                }
-
-                // Анимация для матчей из 4
-                for (const match of matches.filter(m => Array.isArray(m) && m.length === 4)) {
-                    const isVertical = match.every((pos, idx, arr) => idx === 0 || pos.x === arr[0].x);
-                    if (isVertical) {
-                        await this.animateVerticalBombCreation(match);
-                        this.grid[match[0].y][match[0].x] = VERTICAL_BOMB;
-                    } else {
-                        await this.animateHorizontalBombCreation(match);
-                        this.grid[match[0].y][match[0].x] = HORIZONTAL_BOMB;
-                    }
-                }
-
-                // Обычная анимация для остальных матчей (исключаем матчи из 4 и 5)
-                const otherMatches = matches.filter(m => (!Array.isArray(m) || (m.length !== 4 && m.length !== 5)));
-                if (otherMatches.length > 0) {
-                    // Фильтруем только актуальные матчи
-                    const validMatches = otherMatches.filter(match => this.isMatchStillValid(match));
-                    if (validMatches.length > 0) {
-                        await this.animateMatches(validMatches);
-                    }
-                }
-
+            // ЭТАП 1: Обработка специальных гемов
+            const specialGemsProcessed = await this.processSpecialGemPatterns(totalCollected);
+            
+            if (specialGemsProcessed) {
+                console.log('✅ Специальные гемы обработаны, применяем гравитацию');
                 await this.animateGravity();
                 this.gameLogic.applyGravity(this.grid);
                 this.rerenderGrid();
                 this.customSpawnNewElements(this.grid, cascadeCount);
                 await this.animateNewElements();
-
-                // Проверяем новые матчи после создания бомб и применения гравитации
-                const newMatches = this.detectMatchesDeterministic(this.grid);
-                if (newMatches && newMatches.length > 0) {
-                    console.log(`Найдены новые матчи после создания бомб: ${newMatches.length}`);
-                    continue; // Продолжаем цикл с новыми матчами
-                }
-
-                cascadeCount++;
                 await this.delay(300);
+                cascadeCount++;
+                continue; // Переходим к следующему каскаду
+            }
+            
+            // ЭТАП 2: Обработка обычных матчей (только если нет спец гемов)
+            const regularMatchesProcessed = await this.processRegularMatches(totalCollected);
+            
+            if (regularMatchesProcessed) {
+                console.log('✅ Обычные матчи обработаны, применяем гравитацию');
+                await this.animateGravity();
+                this.gameLogic.applyGravity(this.grid);
+                this.rerenderGrid();
+                this.customSpawnNewElements(this.grid, cascadeCount);
+                await this.animateNewElements();
+                await this.delay(300);
+                cascadeCount++;
             } else {
+                console.log('❌ Матчей не найдено, завершаем обработку');
                 foundMatches = false;
             }
         }
+
+        // Обновляем статистику
         Object.keys(totalCollected).forEach(gemType => {
             if (totalCollected[gemType] > 0) {
                 this.collectedGems[gemType] = (this.collectedGems[gemType] || 0) + totalCollected[gemType];
@@ -1353,6 +1196,123 @@ export class MainScene extends Phaser.Scene {
         this.updateProgressDisplay();
         this.checkWinCondition();
         console.log(`Обработано каскадов: ${cascadeCount}, Random calls: ${this.randomCallCounter}`);
+    }
+
+    // ЭТАП 1: Обработка специальных гемов
+    async processSpecialGemPatterns(totalCollected) {
+        const squares2x2 = this.detectSquares2x2(this.grid);
+        const tShapes = this.detectTShapes(this.grid);
+        const lShapes = this.detectLShapes(this.grid);
+        const matches = this.detectMatchesDeterministic(this.grid);
+        
+        // Фильтруем только матчи из 4 и 5 элементов
+        const specialMatches = matches.filter(match => 
+            Array.isArray(match) && (match.length === 4 || match.length === 5)
+        );
+        
+        const hasSpecialPatterns = squares2x2.length > 0 || tShapes.length > 0 || 
+                                  lShapes.length > 0 || specialMatches.length > 0;
+        
+        if (!hasSpecialPatterns) {
+            return false; // Нет специальных паттернов
+        }
+        
+        console.log(`🔥 Найдены специальные паттерны:`, {
+            squares2x2: squares2x2.length,
+            tShapes: tShapes.length, 
+            lShapes: lShapes.length,
+            matches4: specialMatches.filter(m => m.length === 4).length,
+            matches5: specialMatches.filter(m => m.length === 5).length
+        });
+        
+        this.sound.play('match', { volume: 0.5 });
+        
+        // Собираем статистику камней
+        this.collectGemsStatistics([...squares2x2, ...tShapes, ...lShapes, ...specialMatches], totalCollected);
+        
+        // Создаем дроны из квадратов 2x2
+        for (const square of squares2x2) {
+            await this.animateDroneCreation(square);
+            this.grid[square[0].y][square[0].x] = DRONE;
+        }
+        
+        // Создаем динамит из T-образных фигур
+        for (const shape of tShapes) {
+            const centerX = Math.round(shape.reduce((sum, pos) => sum + pos.x, 0) / shape.length);
+            const centerY = Math.round(shape.reduce((sum, pos) => sum + pos.y, 0) / shape.length);
+            await this.animateDynamiteCreation(shape);
+            this.grid[centerY][centerX] = DYNAMITE;
+        }
+        
+        // Создаем динамит из L-образных фигур
+        for (const shape of lShapes) {
+            await this.animateDynamiteCreation(shape);
+            this.grid[shape[0].y][shape[0].x] = DYNAMITE;
+        }
+        
+        // Создаем дискошары из матчей 5 элементов
+        for (const match of specialMatches.filter(m => m.length === 5)) {
+            await this.animateDiscoBallCreation(match);
+            this.grid[match[0].y][match[0].x] = DISCO_BALL;
+        }
+        
+        // Создаем линейные бомбы из матчей 4 элементов
+        for (const match of specialMatches.filter(m => m.length === 4)) {
+            const isVertical = match.every((pos, idx, arr) => idx === 0 || pos.x === arr[0].x);
+            if (isVertical) {
+                await this.animateVerticalBombCreation(match);
+                this.grid[match[0].y][match[0].x] = VERTICAL_BOMB;
+            } else {
+                await this.animateHorizontalBombCreation(match);
+                this.grid[match[0].y][match[0].x] = HORIZONTAL_BOMB;
+            }
+        }
+        
+        return true; // Специальные гемы обработаны
+    }
+    
+    // ЭТАП 2: Обработка обычных матчей
+    async processRegularMatches(totalCollected) {
+        const matches = this.detectMatchesDeterministic(this.grid);
+        
+        // Фильтруем только обычные матчи (3 элемента)
+        const regularMatches = matches.filter(match => 
+            Array.isArray(match) && match.length === 3
+        );
+        
+        if (regularMatches.length === 0) {
+            return false; // Нет обычных матчей
+        }
+        
+        console.log(`💎 Найдены обычные матчи: ${regularMatches.length}`);
+        this.sound.play('match', { volume: 0.5 });
+        
+        // Собираем статистику камней
+        this.collectGemsStatistics(regularMatches, totalCollected);
+        
+        // Фильтруем только актуальные матчи
+        const validMatches = regularMatches.filter(match => this.isMatchStillValid(match));
+        if (validMatches.length > 0) {
+            await this.animateMatches(validMatches);
+        }
+        
+        return true; // Обычные матчи обработаны
+    }
+    
+    // Вспомогательная функция для сбора статистики камней
+    collectGemsStatistics(patterns, totalCollected) {
+        patterns.forEach(pattern => {
+            if (Array.isArray(pattern)) {
+                pattern.forEach(({ x, y }) => {
+                    if (y >= 0 && y < this.grid.length && x >= 0 && x < this.grid[0].length) {
+                        const gemType = this.grid[y][x];
+                        if (gemType >= 1 && gemType <= 5) {
+                            totalCollected[gemType]++;
+                        }
+                    }
+                });
+            }
+        });
     }
 
     // Проверяет, что матч все еще актуален (все гемы на месте и того же типа)

@@ -20,6 +20,8 @@ export class MainScene extends Phaser.Scene {
         super({ key: 'MainScene' });
         
         // Инициализация состояния игры
+        this.gridSubArea = [];
+        this.gridSubAreaSprites = [];
         this.grid = [];
         this.sprites = [];
         this.selectedElement = null;
@@ -452,6 +454,35 @@ export class MainScene extends Phaser.Scene {
         const result = this.gameLogic.getRandom(min, max);
         console.log(`Random call #${this.randomCallCounter} [${context}]: ${result} (${min}-${max})`);
         return result;
+    }
+
+    createGridSubArea() {
+        this.gridSubArea = [];
+        this.gridSubAreaSprites = [];
+        for (let y = 0; y < GRID_HEIGHT; y++) {
+            const row = [];
+            for (let x = 0; x < GRID_WIDTH; x++) {
+                if (x >= 1 && x < GRID_WIDTH - 1 && y >= 1 && y < GRID_HEIGHT - 1) {
+                    row.push(1);
+                } else {
+                    row.push(0);
+                }
+            }
+            this.gridSubArea.push(row);
+        }
+        this.gridSubAreaSprites = [];
+        for (let y = 0; y < GRID_HEIGHT; y++) {
+            const row = [];
+            for (let x = 0; x < GRID_WIDTH; x++) {
+                row.push(null);
+            }
+            this.gridSubAreaSprites.push(row);
+        }
+    }
+
+    updateGridSubArea(x, y) {
+        this.gridSubArea[y][x] = 0;
+
     }
 
     createInitialGridDeterministic() {

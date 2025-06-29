@@ -2509,17 +2509,19 @@ export class MainScene extends Phaser.Scene {
         this.movesLeft--;
         this.updateMovesDisplay();
         
-        const targetColor = this.grid[to.y][to.x];
+        // Исправляем логику: берем цвет из исходной позиции (from), а не из целевой (to)
+        // Это цвет гема, который перемещается на дискошар или с дискошара
+        const targetColor = this.grid[from.y][from.x];
         
         if (targetColor >= 1 && targetColor <= 5) {
-            console.log(`Дискошар выбрал цвет: ${targetColor}`);
+            console.log(`Дискошар выбрал цвет: ${targetColor} из позиции ${from.x}, ${from.y}`);
             
             // Убираем все гемы этого цвета
-            await this.removeAllGemsOfColor(targetColor, from.x, from.y);
+            await this.removeAllGemsOfColor(targetColor, to.x, to.y);
         } else {
-            console.log('Целевая клетка не содержит обычный гем');
+            console.log('Исходная клетка не содержит обычный гем');
             // Удаляем дискошар без эффекта
-            await this.removeDiscoBall(from.x, from.y);
+            await this.removeDiscoBall(to.x, to.y);
         }
         
         // Проверяем условие поражения
@@ -2824,18 +2826,21 @@ export class MainScene extends Phaser.Scene {
         await Promise.all(animPromises);
         await this.delay(200);
         
-        // Создаём динамит в центральной позиции с эффектной анимацией
-        const centerX = Math.round(shape.reduce((sum, pos) => sum + pos.x, 0) / shape.length);
-        const centerY = Math.round(shape.reduce((sum, pos) => sum + pos.y, 0) / shape.length);
+        // Создаём динамит в угловой позиции L-фигуры
+        // Находим угловую позицию (первый элемент в массиве shape)
+        const cornerX = shape[0].x;
+        const cornerY = shape[0].y;
+
+        this.grid[cornerY][cornerX] = DYNAMITE;
         
         // Эффект взрыва-появления
         const explosion = this.add.circle(
-            centerX * (elementWidth + elementSpacing) + elementWidth / 2,
-            centerY * (elementHeight + elementSpacing) + elementHeight / 2,
+            cornerX * (elementWidth + elementSpacing) + elementWidth / 2,
+            cornerY * (elementHeight + elementSpacing) + elementHeight / 2,
             5,
             0xFF4500
         );
-        explosion.setDepth(10);
+        explosion.setDepth(150);
         
         return new Promise(resolve => {
             this.tweens.add({
@@ -2847,8 +2852,8 @@ export class MainScene extends Phaser.Scene {
                 onComplete: () => {
                     explosion.destroy();
                     
-                    // Создаём спрайт динамита с появлением
-                    const dynamiteSprite = this.createSprite(DYNAMITE, centerY, centerX, true);
+                    // Создаём спрайт динамита с появлением в угловой позиции
+                    const dynamiteSprite = this.createSprite(DYNAMITE, cornerY, cornerX, true);
                     
                     this.tweens.add({
                         targets: dynamiteSprite,
@@ -2906,7 +2911,7 @@ export class MainScene extends Phaser.Scene {
                 10,
                 0xFF4500
             );
-            explosionEffect.setDepth(15);
+            explosionEffect.setDepth(150);
             
             animPromises.push(new Promise(resolve => {
                 this.tweens.add({
@@ -2948,11 +2953,12 @@ export class MainScene extends Phaser.Scene {
                 const nx = x + dx;
                 const ny = y + dy;
                 
-                if (nx >= 0 && nx < this.gameLogic.gridWidth && 
-                    ny >= 0 && ny < this.gameLogic.gridHeight) {
+                if (nx >= 0 && nx < GRID_WIDTH && 
+                    ny >= 0 && ny < GRID_HEIGHT) {
                     
                     const gemType = this.grid[ny][nx];
-                    if (gemType >= 1 && gemType <= 5) {
+                    // Исправляем условие: взрываем все гемы (обычные и специальные), кроме пустых клеток
+                    if (gemType > 0) {
                         if (this.sprites[ny][nx]) {
                             const delay = Math.abs(dx) + Math.abs(dy); // Задержка на основе расстояния
                             animPromises.push(new Promise(resolve => {
@@ -2974,6 +2980,7 @@ export class MainScene extends Phaser.Scene {
                             }));
                         }
                         this.grid[ny][nx] = 0;
+                        console.log(`Взорван гем типа ${gemType} на позиции ${nx}, ${ny}`);
                     }
                     
                     // TODO: Здесь будет логика снятия уровня у препятствий
